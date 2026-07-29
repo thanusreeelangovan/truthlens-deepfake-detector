@@ -1,23 +1,22 @@
 """
 TruthLens AI — Backend Entry Point
 Path: backend/main.py
-
-Day 1 scope: health check + CORS only.
-Pipeline endpoints (upload, analyze) land in Day 2.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+
+from utils.video_processor import save_video
 
 app = FastAPI(
     title="TruthLens AI",
     description="Real-time media authenticity analysis engine",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,5 +28,21 @@ async def health_check():
     return {
         "status": "online",
         "engine": "TruthLens AI",
-        "version": "0.1.0",
+        "version": "0.2.0",
+    }
+
+
+@app.post("/api/upload")
+async def upload_video(file: UploadFile = File(...)):
+    """
+    Accepts a video file, validates it, and opens a case file.
+    Returns a case_id used by all subsequent pipeline calls.
+    """
+    result = save_video(file)
+    return {
+        "status": "received",
+        "case_id": result["case_id"],
+        "filename": result["filename"],
+        "size_mb": result["size_mb"],
+        "next_stage": "frame_extraction",
     }

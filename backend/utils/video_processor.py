@@ -1,42 +1,52 @@
-import cv2
+"""
+Video validation and temporary storage.
+Path: backend/utils/video_processor.py
+
+Day 2 scope: validate + save only. Frame extraction lands Day 3.
+"""
+
 import os
-from pathlib import Path
+import uuid
+import shutil
+from fastapi import UploadFile, HTTPException
 
-def extract_frames(video_path: str, max_frames: int = 60, sample_rate: int = 10) -> list[dict]:
-    """
-    Extract frames from video. Returns list of frame metadata dicts.
-    sample_rate: extract 1 frame every N frames
-    """
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise ValueError(f"Cannot open video: {video_path}")
+ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm"}
+MAX_FILE_SIZE_MB = 100
+UPLOAD_DIR = "storage/uploads"
 
-    frames = []
-    frame_idx = 0
-    saved = 0
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    output_dir = Path(video_path).parent / (Path(video_path).stem + "_frames")
-    output_dir.mkdir(exist_ok=True)
 
-    while saved < max_frames:
-        ret, frame = cap.read()
-        if not ret:
-            break
+def validate_video(file: UploadFile) -> None:
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{ext}'. Accepted: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
 
-        if frame_idx % sample_rate == 0:
-            frame_path = str(output_dir / f"frame_{saved:04d}.jpg")
-            cv2.imwrite(frame_path, frame)
-            h, w = frame.shape[:2]
-            frames.append({
-                "index": saved,
-                "original_frame": frame_idx,
-                "path": frame_path,
-                "width": w,
-                "height": h,
-            })
-            saved += 1
 
-        frame_idx += 1
+def save_video(file: UploadFile) -> dict:
+    validate_video(file)
 
-    cap.release()
-    return frames
+    case_id = str(uuid.uuid4())
+    ext = os.path.splitext(file.filename)[1].lower()
+    dest_path = os.path.join(UPLOAD_DIR, f"{case_id}{ext}")
+
+    with open(dest_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    size_mb = os.path.getsize(dest_path) / (1024 * 1024)
+    if size_mb > MAX_FILE_SIZE_MB:
+        os.remove(dest_path)
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds {MAX_FILE_SIZE_MB}MB limit ({size_mb:.1f}MB submitted).",
+        )
+
+    return {
+        "case_id": case_id,
+        "filename": file.filename,
+        "path": dest_path,
+        "size_mb": round(size_mb, 2),
+    }

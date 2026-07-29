@@ -3,5 +3,45 @@
 @tailwind utilities;
 
 body {
-  @apply bg-forensic-bg text-gray-200 font-sans;
+  @apply bg-forensic-bg text-forensic-text font-sans;
+}
+
+/* Sprocket-hole filmstrip strip — the signature element.
+   A row of small punched holes along a panel edge, evoking
+   35mm film examined frame-by-frame under a loupe. */
+.filmstrip-edge {
+  height: 10px;
+  background-color: #0e0b08;
+  background-image: radial-gradient(circle, #14110d 2.5px, transparent 2.6px);
+  background-size: 18px 10px;
+  background-position: 6px center;
+  border-top: 1px solid #332c22;
+  border-bottom: 1px solid #332c22;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Scan line that sweeps across the filmstrip during active analysis */
+.filmstrip-edge.scanning::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: #e8a33d;
+  box-shadow: 0 0 8px 1px #e8a33d;
+  animation: scan 2.2s linear infinite;
+}
+
+@keyframes scan {
+  from { left: -2px; }
+  to { left: 100%; }
+}
+
+/* Case-file exhibit tag — used for evidence indicators */
+.exhibit-tag {
+  @apply font-data text-[10px] tracking-wider uppercase text-forensic-muted;
+  border: 1px solid #332c22;
+  padding: 2px 6px;
 }
