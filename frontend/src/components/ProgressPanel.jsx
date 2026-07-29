@@ -1,65 +1,95 @@
-import React, { useEffect, useState } from 'react'
+/**
+ * TruthLens AI — ProgressPanel
+ * Path: frontend/src/components/ProgressPanel.jsx
+ *
+ * Staged examiner view. Real backend call happens for "Extracting Frames";
+ * remaining stages simulate progression until Day 4 wires them to real work.
+ */
 
-const STEPS = [
-  { id: 'upload',   label: 'Video received' },
-  { id: 'extract',  label: 'Extracting frames…' },
-  { id: 'detect',   label: 'Detecting faces…' },
-  { id: 'analyze',  label: 'Running forensic analysis…' },
-  { id: 'score',    label: 'Aggregating results…' },
+import { useEffect, useState } from 'react'
+import { analyzeCase } from '../services/api'
+
+const STAGES = [
+  { key: 'extracting', label: 'Extracting frames' },
+  { key: 'faces', label: 'Detecting faces' },
+  { key: 'inference', label: 'Running authenticity inference' },
+  { key: 'report', label: 'Compiling report' },
 ]
 
-export default function ProgressPanel({ jobId, onComplete }) {
-  const [current, setCurrent] = useState(0)
-  const [pct, setPct] = useState(0)
+function ProgressPanel({ caseId, onComplete }) {
+  const [stageIndex, setStageIndex] = useState(0)
+  const [error, setError] = useState(null)
+  const [meta, setMeta] = useState(null)
 
   useEffect(() => {
-    // Week 1: simulate pipeline. Week 2: replace with real SSE
-    const interval = setInterval(() => {
-      setCurrent(c => {
-        const next = c + 1
-        setPct(Math.round((next / STEPS.length) * 100))
-        if (next >= STEPS.length) {
-          clearInterval(interval)
-          setTimeout(() => onComplete(mockResult(jobId)), 600)
+    let cancelled = false
+
+    async function run() {
+      try {
+        const result = await analyzeCase(caseId)
+        if (cancelled) return
+        setMeta(result)
+        setStageIndex(1)
+
+        // Day 4 will replace this with real face-detection/inference calls.
+        for (let i = 2; i <= STAGES.length; i++) {
+          await new Promise((r) => setTimeout(r, 900))
+          if (cancelled) return
+          setStageIndex(i)
         }
-        return next
-      })
-    }, 900)
-    return () => clearInterval(interval)
-  }, [])
+
+        await new Promise((r) => setTimeout(r, 600))
+        if (!cancelled) onComplete({ caseId, ...result })
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.response?.data?.detail || 'Examination failed.')
+        }
+      }
+    }
+
+    run()
+    return () => { cancelled = true }
+  }, [caseId])
 
   return (
-    <div className="card">
-      <p className="section-title">Forensic Analysis — Job {jobId?.slice(0, 8)}</p>
-      <div className="progress-bar-track">
-        <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+    <div className="w-full max-w-lg">
+      <p className="exhibit-tag inline-block mb-4">Examination in progress</p>
+
+      <div className="filmstrip-edge scanning mb-6" />
+
+      <div className="space-y-3">
+        {STAGES.map((stage, i) => {
+          const isDone = i < stageIndex
+          const isActive = i === stageIndex
+          return (
+            <div key={stage.key} className="flex items-center gap-3">
+              <span className={`
+                w-1.5 h-1.5 flex-shrink-0
+                ${isDone ? 'bg-forensic-real' : isActive ? 'bg-forensic-safelight animate-pulse' : 'bg-forensic-border'}
+              `} />
+              <span className={`
+                font-data text-xs tracking-wide
+                ${isDone ? 'text-forensic-real' : isActive ? 'text-forensic-safelight' : 'text-forensic-muted'}
+              `}>
+                {stage.label.toUpperCase()}
+                {isDone ? ' — COMPLETE' : isActive ? '…' : ''}
+              </span>
+            </div>
+          )
+        })}
       </div>
-      <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 16 }}>{pct}% complete</p>
-      <ul className="status-log">
-        {STEPS.map((s, i) => (
-          <li key={s.id} className={i < current ? 'done' : i === current ? 'active' : ''}>
-            <span className={`dot ${i < current ? 'done' : i === current ? 'active' : ''}`} />
-            {s.label}
-            {i < current && <span style={{ marginLeft: 'auto', color: 'var(--green)' }}>✓</span>}
-          </li>
-        ))}
-      </ul>
+
+      {meta && (
+        <p className="font-data text-xs text-forensic-muted mt-6">
+          {meta.sampled_frames} frames sampled from {meta.total_frames} total ({meta.fps} fps)
+        </p>
+      )}
+
+      {error && (
+        <p className="font-data text-xs text-forensic-fake mt-4">{error}</p>
+      )}
     </div>
   )
 }
 
-function mockResult(jobId) {
-  return {
-    job_id: jobId,
-    verdict: 'FAKE',
-    confidence: 87.4,
-    frames_analyzed: 42,
-    faces_detected: 1,
-    flagged_frames: [3, 8, 14, 19, 27, 33],
-    flags: [
-      'Inconsistent lip movement detected in frames 8–14',
-      'Face texture irregularities found around eye region',
-      'Frame-to-frame temporal instability observed',
-    ],
-  }
-}
+export default ProgressPanel

@@ -1,34 +1,76 @@
-import React, { useState } from 'react'
-import Uploader from './components/Uploader.jsx'
-import ProgressPanel from './components/ProgressPanel.jsx'
-import ResultDashboard from './components/ResultDashboard.jsx'
+/**
+ * TruthLens AI — Root Shell
+ * Path: frontend/src/App.jsx
+ */
 
-export default function App() {
-  const [stage, setStage] = useState('idle') // idle | uploading | analyzing | done
-  const [jobId, setJobId] = useState(null)
-  const [result, setResult] = useState(null)
+import { useEffect, useState } from 'react'
+import { checkHealth } from './services/api'
+import Uploader from './components/Uploader'
+import ProgressPanel from './components/ProgressPanel'
+
+function App() {
+  const [backendStatus, setBackendStatus] = useState('checking')
+  const [activeCase, setActiveCase] = useState(null)
+  const [analysisResult, setAnalysisResult] = useState(null)
+
+  useEffect(() => {
+    checkHealth()
+      .then(() => setBackendStatus('online'))
+      .catch(() => setBackendStatus('offline'))
+  }, [])
+
+  const isScanning = backendStatus === 'checking'
 
   return (
-    <div className="app">
-      <div className="logo">
-        <div className="logo-icon">🔍</div>
+    <div className="min-h-screen bg-forensic-bg flex flex-col">
+      <header className="px-8 pt-6 pb-4 flex items-end justify-between">
         <div>
-          <h1>Truth<span>Lens</span></h1>
-          <div className="tagline">AI-powered deepfake forensic analysis</div>
+          <p className="exhibit-tag mb-1">Case File — Media Authentication</p>
+          <h1 className="font-stamp text-2xl text-forensic-text tracking-wide">
+            TruthLens<span className="text-forensic-safelight">.</span>AI
+          </h1>
         </div>
-      </div>
+        <div className="font-data text-xs text-right">
+          <p className="text-forensic-muted">EXAMINER ENGINE</p>
+          <p className={
+            backendStatus === 'online' ? 'text-forensic-real' :
+            backendStatus === 'offline' ? 'text-forensic-fake' :
+            'text-forensic-safelight'
+          }>
+            {backendStatus.toUpperCase()}
+          </p>
+        </div>
+      </header>
 
-      {stage === 'idle' && (
-        <Uploader onJobStart={(id) => { setJobId(id); setStage('analyzing') }} />
-      )}
+      <div className={`filmstrip-edge ${isScanning ? 'scanning' : ''}`} />
 
-      {stage === 'analyzing' && (
-        <ProgressPanel jobId={jobId} onComplete={(r) => { setResult(r); setStage('done') }} />
-      )}
+      <main className="flex-1 flex items-center justify-center px-8">
+        {!activeCase && (
+          <Uploader onCaseOpened={setActiveCase} />
+        )}
 
-      {stage === 'done' && (
-        <ResultDashboard result={result} onReset={() => { setStage('idle'); setResult(null) }} />
-      )}
+        {activeCase && !analysisResult && (
+          <ProgressPanel caseId={activeCase.case_id} onComplete={setAnalysisResult} />
+        )}
+
+        {analysisResult && (
+          <div className="text-center max-w-md">
+            <p className="exhibit-tag inline-block mb-4">
+              Case {analysisResult.case_id.slice(0, 8)} — Examined
+            </p>
+            <h2 className="font-sans text-lg text-forensic-text font-medium mb-2">
+              {analysisResult.sampled_frames} frames processed
+            </h2>
+            <p className="text-sm text-forensic-muted">
+              Authenticity report dashboard arrives in Phase 1, Day 4.
+            </p>
+          </div>
+        )}
+      </main>
+
+      <div className="filmstrip-edge" />
     </div>
   )
 }
+
+export default App

@@ -1,10 +1,18 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import shutil, uuid, os, asyncio
-from pathlib import Path
+"""
+TruthLens AI — Backend Entry Point
+Path: backend/main.py
+"""
 
-app = FastAPI(title="TruthLens API", version="1.0.0")
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+
+from utils.video_processor import save_video, extract_frames
+
+app = FastAPI(
+    title="TruthLens AI",
+    description="Real-time media authenticity analysis engine",
+    version="0.3.0",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,37 +22,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "TruthLens API"}
+@app.get("/api/health")
+async def health_check():
+    return {"status": "online", "engine": "TruthLens AI", "version": "0.3.0"}
 
-@app.post("/upload")
+
+@app.post("/api/upload")
 async def upload_video(file: UploadFile = File(...)):
-    allowed = {".mp4", ".mov", ".avi", ".webm"}
-    ext = Path(file.filename).suffix.lower()
-    if ext not in allowed:
-        raise HTTPException(400, f"Unsupported format: {ext}")
-
-    job_id = str(uuid.uuid4())
-    dest = UPLOAD_DIR / f"{job_id}{ext}"
-
-    with open(dest, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    size_mb = dest.stat().st_size / 1_000_000
-    return {"job_id": job_id, "filename": file.filename, "size_mb": round(size_mb, 2), "status": "uploaded"}
-
-@app.get("/status/{job_id}")
-async def get_status(job_id: str):
-    # Week 1 stub — real pipeline wired in Week 2
-    return {"job_id": job_id, "status": "queued", "progress": 0}
-@app.get("/")
-async def root():
+    result = save_video(file)
     return {
-        "message": "TruthLens API is running",
-        "docs": "/docs",
-        "health": "/health"
+        "status": "received",
+        "case_id": result["case_id"],
+        "filename": result["filename"],
+        "size_mb": result["size_mb"],
+        "next_stage": "frame_extraction",
+    }
+
+
+@app.post("/api/analyze/{case_id}")
+async def analyze_case(case_id: str):
+    """
+    Day 3 scope: frame extraction only.
+    Face detection + inference stages plug in here on Day 4.
+    """
+    extraction = extract_frames(case_id)
+    return {
+        "status": "frames_extracted",
+        "case_id": case_id,
+        "fps": extraction["fps"],
+        "total_frames": extraction["total_frames"],
+        "sampled_frames": extraction["sampled_frames"],
+        "next_stage": "face_detection",
     }
