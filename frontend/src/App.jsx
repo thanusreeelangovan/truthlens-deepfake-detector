@@ -1,20 +1,18 @@
 /**
  * TruthLens AI — Root Shell
  * Path: frontend/src/App.jsx
- *
- * Theme: "Evidence Locker" — darkroom / case-file forensic examiner,
- * not a hacker-terminal dashboard. Signature element is the sprocket-hole
- * filmstrip strip with a sweeping scan line during analysis.
  */
 
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import { checkHealth } from './services/api'
+import Uploader from './components/Uploader'
 
 function App() {
   const [backendStatus, setBackendStatus] = useState('checking')
+  const [activeCase, setActiveCase] = useState(null)
 
   useEffect(() => {
-    axios.get('http://localhost:8000/api/health')
+    checkHealth()
       .then(() => setBackendStatus('online'))
       .catch(() => setBackendStatus('offline'))
   }, [])
@@ -23,7 +21,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-forensic-bg flex flex-col">
-      {/* Header — case file letterhead, not a nav bar */}
       <header className="px-8 pt-6 pb-4 flex items-end justify-between">
         <div>
           <p className="exhibit-tag mb-1">Case File — Media Authentication</p>
@@ -43,19 +40,26 @@ function App() {
         </div>
       </header>
 
-      {/* Signature element: filmstrip sprocket strip with scan line */}
       <div className={`filmstrip-edge ${isScanning ? 'scanning' : ''}`} />
 
       <main className="flex-1 flex items-center justify-center px-8">
-        <div className="text-center max-w-md">
-          <p className="exhibit-tag inline-block mb-4">Exhibit A — Pending</p>
-          <h2 className="font-sans text-lg text-forensic-text font-medium mb-2">
-            No media submitted for examination
-          </h2>
-          <p className="text-sm text-forensic-muted">
-            Upload interface arrives in Phase 1, Day 2.
-          </p>
-        </div>
+        {!activeCase && (
+          <Uploader onCaseOpened={setActiveCase} />
+        )}
+
+        {activeCase && (
+          <div className="text-center max-w-md">
+            <p className="exhibit-tag inline-block mb-4">
+              Case {activeCase.case_id.slice(0, 8)}
+            </p>
+            <h2 className="font-sans text-lg text-forensic-text font-medium mb-2">
+              {activeCase.filename} — {activeCase.size_mb}MB
+            </h2>
+            <p className="text-sm text-forensic-muted">
+              Examination interface arrives in Phase 1, Day 3.
+            </p>
+          </div>
+        )}
       </main>
 
       <div className="filmstrip-edge" />

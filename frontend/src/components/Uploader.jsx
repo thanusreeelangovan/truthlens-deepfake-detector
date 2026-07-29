@@ -1,73 +1,107 @@
-import React, { useRef, useState } from 'react'
-import axios from 'axios'
+/**
+ * TruthLens AI — Uploader
+ * Path: frontend/src/components/Uploader.jsx
+ *
+ * "Submit evidence" panel. Drag-and-drop or file picker.
+ * Styled as a case-file intake form, not a generic upload widget.
+ */
 
-const API = 'http://localhost:8000'
+import { useState, useRef } from 'react'
+import { uploadVideo } from '../services/api'
 
-export default function Uploader({ onJobStart }) {
-  const inputRef = useRef()
-  const [dragging, setDragging] = useState(false)
-  const [uploading, setUploading] = useState(false)
+function Uploader({ onCaseOpened }) {
+  const [isDragging, setIsDragging] = useState(false)
+  const [progress, setProgress] = useState(null)
   const [error, setError] = useState(null)
+  const [fileName, setFileName] = useState(null)
+  const inputRef = useRef(null)
 
   const handleFile = async (file) => {
     if (!file) return
     setError(null)
-    setUploading(true)
+    setFileName(file.name)
+    setProgress(0)
+
     try {
-      const form = new FormData()
-      form.append('file', file)
-      const { data } = await axios.post(`${API}/upload`, form)
-      onJobStart(data.job_id)
-    } catch (e) {
-      setError(e.response?.data?.detail || 'Upload failed. Check the backend is running.')
-    } finally {
-      setUploading(false)
+      const result = await uploadVideo(file, setProgress)
+      onCaseOpened(result)
+    } catch (err) {
+      setError(
+        err.response?.data?.detail || 'Submission failed. Evidence could not be logged.'
+      )
+      setProgress(null)
     }
   }
 
-  const onDrop = (e) => {
+  const handleDrop = (e) => {
     e.preventDefault()
-    setDragging(false)
+    setIsDragging(false)
     handleFile(e.dataTransfer.files[0])
   }
 
   return (
-    <div className="card">
+    <div className="w-full max-w-lg">
+      <p className="exhibit-tag inline-block mb-4">Exhibit A — Submission</p>
+
       <div
-        className={`upload-zone ${dragging ? 'drag-over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        onClick={() => inputRef.current.click()}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => inputRef.current?.click()}
+        className={`
+          border cursor-pointer transition-colors duration-150
+          bg-forensic-panel px-8 py-12 text-center
+          ${isDragging ? 'border-forensic-safelight' : 'border-forensic-border'}
+        `}
       >
-        <div className="icon">🎬</div>
-        <h2>Drop a video to analyze</h2>
-        <p style={{ marginBottom: 20 }}>MP4, MOV, AVI, WEBM — up to 100 MB</p>
-        <button className="btn btn-primary" disabled={uploading} onClick={e => { e.stopPropagation(); inputRef.current.click() }}>
-          {uploading ? '⏳ Uploading…' : '📁 Choose file'}
-        </button>
-        <input ref={inputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".mp4,.mov,.avi,.webm"
+          className="hidden"
+          onChange={(e) => handleFile(e.target.files[0])}
+        />
+
+        {progress === null && (
+          <>
+            <p className="font-sans text-sm text-forensic-text mb-1">
+              Drop video file or click to select
+            </p>
+            <p className="font-data text-xs text-forensic-muted">
+              MP4 · MOV · AVI · WEBM — up to 100MB
+            </p>
+          </>
+        )}
+
+        {progress !== null && progress < 100 && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <p className="font-data text-xs text-forensic-muted mb-3">
+              LOGGING EVIDENCE — {fileName}
+            </p>
+            <div className="w-full h-1 bg-forensic-border">
+              <div
+                className="h-1 bg-forensic-safelight transition-all duration-150"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="font-data text-xs text-forensic-safelight mt-2">{progress}%</p>
+          </div>
+        )}
+
+        {progress === 100 && (
+          <p className="font-data text-xs text-forensic-real">
+            CASE FILE OPENED — awaiting examination
+          </p>
+        )}
       </div>
 
-      {/* Judge demo button */}
-      <div style={{ marginTop: 16, textAlign: 'center' }}>
-        <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 10 }}>
-          Or run the pre-loaded demo video:
+      {error && (
+        <p className="font-data text-xs text-forensic-fake mt-3">
+          {error}
         </p>
-        <button className="btn btn-ghost" onClick={async (e) => {
-          e.stopPropagation()
-          try {
-            const { data } = await axios.get(`${API}/demo-start`)
-            onJobStart(data.job_id)
-          } catch {
-            setError('No demo video found. Upload a video first.')
-          }
-        }}>
-          ⚡ Run demo analysis
-        </button>
-      </div>
-
-      {error && <p style={{ color: 'var(--red)', marginTop: 12, fontSize: 13 }}>⚠ {error}</p>}
+      )}
     </div>
   )
 }
+
+export default Uploader
