@@ -1,34 +1,52 @@
-import React, { useState } from 'react'
-import Uploader from './components/Uploader.jsx'
-import ProgressPanel from './components/ProgressPanel.jsx'
-import ResultDashboard from './components/ResultDashboard.jsx'
+/**
+ * TruthLens AI — Root Shell
+ * Path: frontend/src/App.jsx
+ *
+ * Day 1 scope: static shell + backend connectivity check.
+ * Upload/progress/results components land Day 2+.
+ */
 
-export default function App() {
-  const [stage, setStage] = useState('idle') // idle | uploading | analyzing | done
-  const [jobId, setJobId] = useState(null)
-  const [result, setResult] = useState(null)
+import { useEffect, useState } from 'react'
+import axios from 'axios'
+
+function App() {
+  const [backendStatus, setBackendStatus] = useState('checking')
+
+  useEffect(() => {
+    axios.get('http://localhost:8000/api/health')
+      .then(() => setBackendStatus('online'))
+      .catch(() => setBackendStatus('offline'))
+  }, [])
 
   return (
-    <div className="app">
-      <div className="logo">
-        <div className="logo-icon">🔍</div>
-        <div>
-          <h1>Truth<span>Lens</span></h1>
-          <div className="tagline">AI-powered deepfake forensic analysis</div>
+    <div className="min-h-screen bg-forensic-bg flex flex-col">
+      <header className="border-b border-forensic-border px-8 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-forensic-accent animate-pulse" />
+          <h1 className="font-mono text-sm tracking-widest text-gray-300">
+            TRUTHLENS<span className="text-forensic-accent">.AI</span>
+          </h1>
         </div>
-      </div>
+        <div className="font-mono text-xs text-forensic-muted">
+          ENGINE:{' '}
+          <span className={backendStatus === 'online' ? 'text-forensic-accent' : 'text-forensic-warn'}>
+            {backendStatus.toUpperCase()}
+          </span>
+        </div>
+      </header>
 
-      {stage === 'idle' && (
-        <Uploader onJobStart={(id) => { setJobId(id); setStage('analyzing') }} />
-      )}
-
-      {stage === 'analyzing' && (
-        <ProgressPanel jobId={jobId} onComplete={(r) => { setResult(r); setStage('done') }} />
-      )}
-
-      {stage === 'done' && (
-        <ResultDashboard result={result} onReset={() => { setStage('idle'); setResult(null) }} />
-      )}
+      <main className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <p className="font-mono text-xs text-forensic-muted tracking-widest mb-2">
+            MEDIA FORENSICS PLATFORM
+          </p>
+          <h2 className="text-2xl text-gray-300 font-light">
+            Upload interface arrives in Phase 1, Day 2
+          </h2>
+        </div>
+      </main>
     </div>
   )
 }
+
+export default App

@@ -43,11 +43,30 @@ export default function Uploader({ onJobStart }) {
         <div className="icon">🎬</div>
         <h2>Drop a video to analyze</h2>
         <p style={{ marginBottom: 20 }}>MP4, MOV, AVI, WEBM — up to 100 MB</p>
-        <button className="btn btn-primary" disabled={uploading}>
+        <button className="btn btn-primary" disabled={uploading} onClick={e => { e.stopPropagation(); inputRef.current.click() }}>
           {uploading ? '⏳ Uploading…' : '📁 Choose file'}
         </button>
         <input ref={inputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
       </div>
+
+      {/* Judge demo button */}
+      <div style={{ marginTop: 16, textAlign: 'center' }}>
+        <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 10 }}>
+          Or run the pre-loaded demo video:
+        </p>
+        <button className="btn btn-ghost" onClick={async (e) => {
+          e.stopPropagation()
+          try {
+            const { data } = await axios.get(`${API}/demo-start`)
+            onJobStart(data.job_id)
+          } catch {
+            setError('No demo video found. Upload a video first.')
+          }
+        }}>
+          ⚡ Run demo analysis
+        </button>
+      </div>
+
       {error && <p style={{ color: 'var(--red)', marginTop: 12, fontSize: 13 }}>⚠ {error}</p>}
     </div>
   )
