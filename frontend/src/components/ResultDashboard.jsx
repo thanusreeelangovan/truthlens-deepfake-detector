@@ -1,65 +1,16 @@
 import React from 'react'
 
 export default function ResultDashboard({ result, onReset }) {
-  const isFake = result.verdict === 'FAKE'
+  const isManipulated = result.verdict === 'LIKELY_MANIPULATED'
   const totalFrames = result.frames_analyzed
-  const flaggedCount = result.flagged_frames.length
+  const verdictClass = result.verdict.toLowerCase().replaceAll('_', '-')
 
   return (
-    <div>
-      <div className="card">
-        <p className="section-title">Analysis Complete</p>
-
-        <div className={`verdict-badge ${isFake ? 'verdict-fake' : 'verdict-real'}`}>
-          {isFake ? '⚠ DEEPFAKE DETECTED' : '✓ AUTHENTIC VIDEO'}
-        </div>
-
-        <ConfidenceRing value={result.confidence} fake={isFake} />
-
-        <div className="metric-grid">
-          <div className="metric-box">
-            <div className="value" style={{ color: 'var(--accent)' }}>{totalFrames}</div>
-            <div className="label">Frames analyzed</div>
-          </div>
-          <div className="metric-box">
-            <div className="value" style={{ color: 'var(--text)' }}>{result.faces_detected}</div>
-            <div className="label">Faces detected</div>
-          </div>
-          <div className="metric-box">
-            <div className="value" style={{ color: isFake ? 'var(--red)' : 'var(--green)' }}>{flaggedCount}</div>
-            <div className="label">Flagged frames</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <p className="section-title">Why it was flagged</p>
-        <ul className="flags-list">
-          {result.flags.map((f, i) => (
-            <li key={i}>
-              <span className="flag-icon">!</span>
-              {f}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="card">
-        <p className="section-title">Frame-level indicators</p>
-        <div className="frame-strip">
-          {Array.from({ length: totalFrames }, (_, i) => {
-            const flagged = result.flagged_frames.includes(i)
-            return (
-              <div key={i} className={`frame-thumb ${flagged ? 'flagged' : 'clean'}`}>
-                <span>{flagged ? '⚠' : '✓'}</span>
-                <span className="frame-label">F{i + 1}</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <button className="btn btn-ghost" onClick={onReset}>← Analyze another video</button>
+    <div className="result-report">
+      <div className="report-heading"><div><p className="eyebrow">CASE / {result.case_id.slice(0, 8).toUpperCase()}</p><h2>FORENSIC REPORT</h2></div><button className="button button-quiet" onClick={onReset}>NEW CASE</button></div>
+      <div className="result-lead"><div><p className="eyebrow">VIDEO VERDICT</p><div className={`verdict-label ${verdictClass}`}>{result.verdict.replaceAll('_', ' ')}</div><p className="report-caption">Probabilistic assessment from {result.model}.</p></div><ConfidenceRing value={result.confidence} fake={isManipulated} /></div>
+      <div className="metric-grid"><div className="metric-box"><div className="value">{totalFrames}</div><div className="label">Frames analyzed</div></div><div className="metric-box"><div className="value">{result.faces_detected}</div><div className="label">Faces detected</div></div><div className="metric-box"><div className="value">{result.suspicious_frame_count}</div><div className="label">Suspicious frames</div></div></div>
+      <div className="report-columns"><section><p className="section-title">EXPLANATION SIGNALS</p><ul className="flags-list">{result.explanation_signals.map((signal) => <li key={signal}><span className="flag-icon">+</span>{signal}</li>)}</ul></section><section><p className="section-title">FRAME PROBABILITIES</p><div className="probability-strip">{result.frame_probabilities.map(({ frame_index, fake_probability }) => <div className="probability" key={frame_index}><span>F{String(frame_index + 1).padStart(2, '0')}</span><i style={{ height: `${Math.max(8, fake_probability * 100)}%` }} className={fake_probability >= 0.65 ? 'suspicious' : ''} /><b>{Math.round(fake_probability * 100)}%</b></div>)}</div></section></div>
     </div>
   )
 }
@@ -76,16 +27,16 @@ function ConfidenceRing({ value, fake }) {
         <circle
           cx="70" cy="70" r={r}
           fill="none"
-          stroke={fake ? 'var(--red)' : 'var(--green)'}
+          stroke={fake ? 'var(--signal)' : 'var(--safe)'}
           strokeWidth="10"
           strokeDasharray={`${filled} ${circ - filled}`}
           strokeLinecap="round"
           transform="rotate(-90 70 70)"
         />
-        <text x="70" y="64" textAnchor="middle" fontSize="28" fontWeight="700" fill={fake ? 'var(--red)' : 'var(--green)'}>
+        <text x="70" y="64" textAnchor="middle" fontSize="28" fontWeight="700" fill={fake ? 'var(--signal)' : 'var(--safe)'}>
           {Math.round(value)}%
         </text>
-        <text x="70" y="82" textAnchor="middle" fontSize="11" fill="var(--text-dim)">confidence</text>
+        <text x="70" y="82" textAnchor="middle" fontSize="11" fill="var(--muted)">confidence</text>
       </svg>
     </div>
   )

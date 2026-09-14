@@ -12,6 +12,8 @@ dist/
 
 # Uploads
 uploads/
+storage/
+model-cache/
 
 # IDE
 .vscode/

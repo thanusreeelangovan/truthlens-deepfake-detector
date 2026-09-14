@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { checkHealth } from './services/api'
 import Uploader from './components/Uploader'
 import ProgressPanel from './components/ProgressPanel'
+import ResultDashboard from './components/ResultDashboard'
 
 function App() {
   const [backendStatus, setBackendStatus] = useState('checking')
@@ -19,56 +20,20 @@ function App() {
       .catch(() => setBackendStatus('offline'))
   }, [])
 
-  const isScanning = backendStatus === 'checking'
-
   return (
-    <div className="min-h-screen bg-forensic-bg flex flex-col">
-      <header className="px-8 pt-6 pb-4 flex items-end justify-between">
-        <div>
-          <p className="exhibit-tag mb-1">Case File — Media Authentication</p>
-          <h1 className="font-stamp text-2xl text-forensic-text tracking-wide">
-            TruthLens<span className="text-forensic-safelight">.</span>AI
-          </h1>
-        </div>
-        <div className="font-data text-xs text-right">
-          <p className="text-forensic-muted">EXAMINER ENGINE</p>
-          <p className={
-            backendStatus === 'online' ? 'text-forensic-real' :
-            backendStatus === 'offline' ? 'text-forensic-fake' :
-            'text-forensic-safelight'
-          }>
-            {backendStatus.toUpperCase()}
-          </p>
-        </div>
-      </header>
-
-      <div className={`filmstrip-edge ${isScanning ? 'scanning' : ''}`} />
-
-      <main className="flex-1 flex items-center justify-center px-8">
-        {!activeCase && (
-          <Uploader onCaseOpened={setActiveCase} />
-        )}
-
-        {activeCase && !analysisResult && (
-          <ProgressPanel caseId={activeCase.case_id} onComplete={setAnalysisResult} />
-        )}
-
-        {analysisResult && (
-          <div className="text-center max-w-md">
-            <p className="exhibit-tag inline-block mb-4">
-              Case {analysisResult.case_id.slice(0, 8)} — Examined
-            </p>
-            <h2 className="font-sans text-lg text-forensic-text font-medium mb-2">
-              {analysisResult.sampled_frames} frames processed
-            </h2>
-            <p className="text-sm text-forensic-muted">
-              Authenticity report dashboard arrives in Phase 1, Day 4.
-            </p>
-          </div>
-        )}
-      </main>
-
-      <div className="filmstrip-edge" />
+    <div className="site-shell">
+      <header className="topbar"><a className="brand" href="/">TRUTH<span>LENS</span></a><div className="top-meta"><span>MEDIA AUTHENTICATION SYSTEM</span><span className={`engine-dot ${backendStatus}`} /> <strong>ENGINE {backendStatus.toUpperCase()}</strong></div></header>
+      {!activeCase && !analysisResult && <>
+        <main className="hero-grid">
+          <section className="hero-copy"><p className="eyebrow">TL / 001 / FORENSIC MEDIA UNIT</p><h1>Verify what<br /><em>your eyes</em> cannot.</h1><p className="hero-description">Frame level AI analysis for detecting manipulated and synthetic video content.</p><div className="hero-actions"><a className="button button-primary" href="#evidence">ANALYZE MEDIA <span>↘</span></a><a className="text-link" href="#pipeline">SEE HOW IT WORKS <span>→</span></a></div><div className="hero-readout"><span>● SYSTEM READY</span><span>UTC {new Date().toISOString().slice(11, 19)}</span><span>BUILD 0.4.0</span></div></section>
+          <section className="evidence-wrap" id="evidence"><Uploader onCaseOpened={setActiveCase} /><div className="evidence-meta"><span>INPUT / VIDEO</span><span>ENCRYPTED IN TRANSIT</span><span>CASE ID GENERATED ON UPLOAD</span></div></section>
+        </main>
+        <section className="pipeline-section" id="pipeline"><div className="section-intro"><p className="eyebrow">ANALYSIS PIPELINE</p><h2>Every frame leaves<br />a trace.</h2></div><div className="pipeline-list">{['FRAME SAMPLING', 'FACE LOCALIZATION', 'FEATURE EXTRACTION', 'AUTHENTICITY INFERENCE', 'TEMPORAL AGGREGATION', 'VIDEO VERDICT'].map((step, index) => <div className="pipeline-step" key={step}><span>0{index + 1}</span><strong>{step}</strong><i>↗</i></div>)}</div></section>
+        <section className="dossier"><div><p className="eyebrow">THE EXAMINATION</p><h2>Signals over<br />assumptions.</h2></div><div className="dossier-copy"><p>TruthLens inspects sampled frames, localizes faces, and compares model probabilities across time. The result is a confidence-aware assessment, not an absolute claim.</p><div className="dossier-lines"><span>FRAME LEVEL INSPECTION</span><span>TEMPORAL ANALYSIS</span><span>EXPLAINABLE RESULTS</span><span>CONFIDENCE AWARE DECISIONS</span></div></div></section>
+        <footer className="footer-cta"><p className="eyebrow">READY FOR EXAMINATION</p><h2>Question the footage.<br /><em>Examine the evidence.</em></h2><a className="button button-primary" href="#evidence">START ANALYSIS <span>↘</span></a></footer>
+      </>}
+      {activeCase && !analysisResult && <main className="analysis-view"><ProgressPanel caseId={activeCase.case_id} onComplete={setAnalysisResult} /></main>}
+      {analysisResult && <main className="analysis-view"><ResultDashboard result={analysisResult} onReset={() => { setActiveCase(null); setAnalysisResult(null) }} /></main>}
     </div>
   )
 }
