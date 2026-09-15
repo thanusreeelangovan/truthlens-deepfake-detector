@@ -14,6 +14,12 @@ dist/
 uploads/
 storage/
 model-cache/
+data/raw/
+data/processed/
+models/*.pt
+models/*.pth
+models/*.bin
+models/*.json
 
 # IDE
 .vscode/

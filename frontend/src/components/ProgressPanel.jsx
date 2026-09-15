@@ -41,16 +41,8 @@ function ProgressPanel({ caseId, onComplete }) {
 
 
 
-      <div className="stage-list">
-        {['FRAME SAMPLING', 'FACE LOCALIZATION', 'FEATURE EXTRACTION', 'AUTHENTICITY INFERENCE', 'TEMPORAL AGGREGATION', 'VIDEO VERDICT'].map((label) => (
-          <div className="stage-row active" key={label}>
-            <span className="stage-dot" />
-            <span>{label}</span>
-            <strong>RUNNING</strong>
-          </div>
-        ))}
-      </div>
-      <p className="progress-note">Sampling and inference are performed on the server. This panel will resolve when the complete report is returned.</p>
+      <div className="stage-list"><div className="stage-row active"><span className="stage-dot" /><span>SERVER ANALYSIS REQUEST</span><strong>RUNNING</strong></div></div>
+      <p className="progress-note">The server is executing frame sampling, face localization, feature extraction, authenticity inference, temporal aggregation, and the video verdict in sequence.</p>
       {error && <p className="error-message">{error}</p>}
     </div>
   )

@@ -1,50 +1,44 @@
+import cv2
 import os
-from collections import defaultdict
+from pathlib import Path
+
+import torch
+from PIL import Image
+from torchvision import transforms
+
+from training.model import IMAGENET_MEAN, IMAGENET_STD, load_checkpoint
+
+DEFAULT_CHECKPOINT = Path(__file__).resolve().parents[2] / "models" / "truthlens_efficientnet_b0.pt"
+MODEL_CHECKPOINT = os.getenv("TRUTHLENS_CHECKPOINT", str(DEFAULT_CHECKPOINT))
+MODEL_NAME = "EfficientNet-B0 fine-tuned on FaceForensics++ c23 face crops"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-MODEL_ID = os.getenv("TRUTHLENS_MODEL_ID", "dima806/deepfake_vs_real_image_detection")
+class InferenceEngine:
+    def __init__(self, checkpoint: str = MODEL_CHECKPOINT):
+        if not os.path.exists(checkpoint):
+            raise RuntimeError(f"Trained checkpoint not found at '{checkpoint}'. Train the model before analysis.")
+        try:
+            self.model = load_checkpoint(checkpoint, DEVICE)
+        except torch.cuda.OutOfMemoryError as exc:
+            raise RuntimeError("Not enough GPU memory to load the trained detector.") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Could not load trained checkpoint '{checkpoint}'.") from exc
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        ])
 
-
-def _load_model():
-	try:
-		from transformers import pipeline
-		return pipeline("image-classification", model=MODEL_ID)
-	except Exception as exc:
-		raise RuntimeError(
-			f"Could not load pretrained model '{MODEL_ID}'. Download it once with network access or set TRUTHLENS_MODEL_ID."
-		) from exc
-
-
-def _fake_probability(predictions: list[dict]) -> float:
-	fake = next((item["score"] for item in predictions if "fake" in item["label"].lower()), None)
-	real = next((item["score"] for item in predictions if "real" in item["label"].lower()), None)
-	if fake is None or real is None:
-		raise RuntimeError("The model output must contain both real and fake labels.")
-	return round(float(fake / (fake + real)), 4)
-
-
-def infer_faces(face_crops: list[dict]) -> dict:
-	"""Run image-level inference and aggregate face scores per sampled frame.
-
-	The model processor handles resize and normalization to the model's expected
-	input. Probability is the model's relative likelihood that a crop is fake.
-	"""
-	if not face_crops:
-		return {"frame_probabilities": [], "model": MODEL_ID}
-
-	model = _load_model()
-	by_frame = defaultdict(list)
-	for crop in face_crops:
-		try:
-			predictions = model(crop["path"])
-			by_frame[crop["frame_index"]].append(_fake_probability(predictions))
-		except RuntimeError:
-			raise
-		except Exception as exc:
-			raise RuntimeError(f"Inference failed for frame {crop['frame_index']}.") from exc
-
-	probabilities = [
-		{"frame_index": frame_index, "fake_probability": round(sum(scores) / len(scores), 4)}
-		for frame_index, scores in sorted(by_frame.items())
-	]
-	return {"frame_probabilities": probabilities, "model": MODEL_ID}
+    def predict(self, face_crops: list[dict]) -> list[dict]:
+        by_frame = {}
+        for crop in face_crops:
+            image = cv2.imread(crop["path"])
+            if image is None:
+                continue
+            tensor = self.transform(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))).unsqueeze(0).to(DEVICE)
+            try:
+                with torch.inference_mode():
+                    probability = torch.softmax(self.model(tensor), dim=1)[0, 1].item()
+            except torch.cuda.OutOfMemoryError as exc:
+                raise RuntimeError("GPU memory was exhausted during inference.") from exc
+            by_frame.setdefault(crop["frame_index"], []).append(probability)
+        return [{"frame_index": index, "fake_probability": round(sum(values) / len(values), 4)} for index, values in sorted(by_frame.items())]

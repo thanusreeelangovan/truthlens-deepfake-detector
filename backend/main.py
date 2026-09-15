@@ -4,22 +4,26 @@ Path: backend/main.py
 """
 
 import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from utils.video_processor import save_video, extract_frames, find_video_path, FRAMES_DIR
-from utils.face_detector import detect_faces
-from utils.inference import infer_faces
+from backend.utils.video_processor import save_video, extract_frames, find_video_path, FRAMES_DIR
+from backend.utils.face_detector import detect_faces
+from backend.utils.inference import InferenceEngine, MODEL_CHECKPOINT, MODEL_NAME
+from backend.utils.aggregation import aggregate_probabilities
 
-SUSPICIOUS_FRAME_THRESHOLD = 0.65
-LIKELY_MANIPULATED_RATIO = 0.45
-LIKELY_AUTHENTIC_RATIO = 0.15
+inference_engine = None
+model_error = None
 
 app = FastAPI(
     title="TruthLens AI",
     description="Real-time media authenticity analysis engine",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.add_middleware(
@@ -33,7 +37,17 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "online", "engine": "TruthLens AI", "version": "0.3.0"}
+    return {"status": "online", "engine": "TruthLens AI", "version": "0.4.0", "model_loaded": inference_engine is not None, "model_error": model_error}
+
+
+@app.on_event("startup")
+async def load_detector():
+    global inference_engine, model_error
+    if os.path.exists(MODEL_CHECKPOINT):
+        try:
+            inference_engine = InferenceEngine(MODEL_CHECKPOINT)
+        except RuntimeError as exc:
+            model_error = str(exc)
 
 
 @app.post("/api/upload")
@@ -52,37 +66,32 @@ async def upload_video(file: UploadFile = File(...)):
 async def analyze_case(case_id: str):
     case_frame_dir = os.path.join(FRAMES_DIR, case_id)
     try:
+        if inference_engine is None:
+            raise HTTPException(status_code=503, detail=model_error or f"Trained checkpoint not found at '{MODEL_CHECKPOINT}'.")
+        started = time.perf_counter()
         extraction = extract_frames(case_id)
         faces = detect_faces(extraction["frame_paths"], case_frame_dir)
-        inference = infer_faces(faces["face_crops"])
-        frame_probabilities = inference["frame_probabilities"]
-        suspicious = [item for item in frame_probabilities if item["fake_probability"] >= SUSPICIOUS_FRAME_THRESHOLD]
-        suspicious_ratio = len(suspicious) / len(frame_probabilities) if frame_probabilities else 0
-
-        if not frame_probabilities:
-            verdict = "INCONCLUSIVE"
-            confidence = 0
-            signals = ["No detectable face regions were available for inference."]
-        elif suspicious_ratio >= LIKELY_MANIPULATED_RATIO:
-            verdict = "LIKELY_MANIPULATED"
-            confidence = round(min(100, suspicious_ratio * 100), 1)
-            signals = ["Facial texture inconsistency", "Temporal instability"]
-        elif suspicious_ratio <= LIKELY_AUTHENTIC_RATIO:
-            verdict = "LIKELY_AUTHENTIC"
-            confidence = round(min(100, (1 - suspicious_ratio) * 100), 1)
-            signals = ["Probability consistency"]
-        else:
-            verdict = "INCONCLUSIVE"
-            confidence = round((1 - abs(suspicious_ratio - 0.5) * 2) * 100, 1)
-            signals = ["Mixed frame-level evidence"]
+        frame_probabilities = inference_engine.predict(faces["face_crops"])
+        values = [item["fake_probability"] for item in frame_probabilities]
+        aggregate = aggregate_probabilities(values)
+        signals = []
+        if aggregate["suspicious_frame_count"]:
+            signals.append(f"{aggregate['suspicious_frame_count']} of {len(values)} analyzed frames showed elevated manipulation probability.")
+        if aggregate["longest_suspicious_sequence"]:
+            signals.append(f"Manipulation probability remained elevated across {aggregate['longest_suspicious_sequence']} consecutive frames.")
+        if not signals:
+            signals.append("No sustained elevated manipulation probability was measured.")
 
         return {
             "status": "complete", "case_id": case_id, "fps": extraction["fps"],
             "total_frames": extraction["total_frames"], "frames_analyzed": len(frame_probabilities),
             "faces_detected": faces["faces_detected"], "frames_with_faces": faces["frames_with_faces"],
-            "suspicious_frame_count": len(suspicious), "suspicious_ratio": round(suspicious_ratio, 4),
-            "frame_probabilities": frame_probabilities, "verdict": verdict, "confidence": confidence,
-            "explanation_signals": signals, "model": inference["model"],
+            "suspicious_frame_count": aggregate["suspicious_frame_count"], "suspicious_ratio": aggregate["suspicious_ratio"],
+            "mean_probability": aggregate["mean_probability"], "median_probability": aggregate["median_probability"],
+            "probability_variance": aggregate["probability_variance"], "longest_suspicious_sequence": aggregate["longest_suspicious_sequence"],
+            "frame_probabilities": frame_probabilities, "verdict": aggregate["verdict"], "confidence": aggregate["confidence"],
+            "manipulation_indicators": signals, "explanation_signals": signals, "model": MODEL_NAME,
+            "processing_time_ms": round((time.perf_counter() - started) * 1000, 2),
             "stages": [
                 {"key": "sampling", "label": "Frame sampling", "status": "complete"},
                 {"key": "faces", "label": "Face localization", "status": "complete"},
