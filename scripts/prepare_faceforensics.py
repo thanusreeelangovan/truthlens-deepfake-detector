@@ -15,15 +15,17 @@ def source_id(path: Path) -> str:
 
 def build_manifest(raw_root: Path, output: Path) -> None:
     rows = []
-    for manipulation_type, label in MANIPULATIONS.items():
-        folder = raw_root / manipulation_type
-        if not folder.exists():
+    for video_path in sorted(raw_root.rglob("*.mp4")):
+        parts = {part.lower() for part in video_path.parts}
+        manipulation_type = next((name for name in MANIPULATIONS if name.lower() in parts), None)
+        if "original_sequences" in parts:
+            manipulation_type = "original"
+        if manipulation_type is None:
             continue
-        for video_path in sorted(folder.rglob("*.mp4")):
-            rows.append({
-                "video_path": str(video_path.resolve()), "label": label,
-                "manipulation_type": manipulation_type, "source_video_id": source_id(video_path),
-            })
+        rows.append({
+            "video_path": str(video_path.resolve()), "label": MANIPULATIONS[manipulation_type],
+            "manipulation_type": manipulation_type, "source_video_id": source_id(video_path),
+        })
     if not rows:
         raise SystemExit(f"No .mp4 files found under {raw_root}. Obtain FaceForensics++ c23 through its official access process.")
     output.parent.mkdir(parents=True, exist_ok=True)
