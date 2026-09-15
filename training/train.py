@@ -41,7 +41,7 @@ def train(manifest: Path, checkpoint: Path, config: TrainingConfig):
     validation_loader = DataLoader(validation_set, config.batch_size, shuffle=False, num_workers=config.num_workers)
     model = build_model(True).to(device); optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=1, factor=0.3)
-    class_counts = np.bincount([int(row["label"]) for row in train_set.rows.to_dict("records")], minlength=2)
+    class_counts = np.bincount([int(row["numeric_label"] if "numeric_label" in row else row["label"]) for row in train_set.rows.to_dict("records")], minlength=2)
     weights = torch.tensor(len(train_set) / (2 * np.maximum(class_counts, 1)), dtype=torch.float32, device=device)
     criterion = nn.CrossEntropyLoss(weight=weights); scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     best_f1 = -1; stale = 0; history = []
@@ -64,5 +64,5 @@ def train(manifest: Path, checkpoint: Path, config: TrainingConfig):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(); parser.add_argument("--manifest", type=Path, default=PROCESSED_ROOT / "faces/face_manifest.csv"); parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
+    parser = argparse.ArgumentParser(); parser.add_argument("--manifest", type=Path, default=PROCESSED_ROOT / "dfdc/faces/face_manifest.csv"); parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     args = parser.parse_args(); train(args.manifest, args.checkpoint, TrainingConfig())

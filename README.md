@@ -1,83 +1,110 @@
 # TruthLens
 
-TruthLens is a local media-forensics workstation for a trainable, probabilistic deepfake detector. It samples video over time, detects faces, runs a trained EfficientNet-B0 classifier on face crops, and aggregates frame evidence into a confidence-aware verdict. It is not forensic proof and should not be treated as definitive.
+TruthLens is a local media-forensics workstation for a trainable, probabilistic deepfake detector. It samples video over time, detects faces, runs a trained EfficientNet-B0 classifier on face crops, and aggregates frame evidence into a confidence-aware verdict. It is not forensic proof.
 
 ## Architecture
 
-React and Vite provide the evidence upload and report workstation. FastAPI owns upload validation, time-based OpenCV frame sampling, Haar cascade face localization, PyTorch/TorchVision inference, temporal aggregation, and temporary-file cleanup. Training and evaluation live in `training/` and dataset preparation in `scripts/`. All browser requests go through `frontend/src/services/api.js`.
+The current FastAPI and React architecture is preserved. FastAPI owns upload validation, time-based OpenCV sampling, face localization, checkpoint inference, temporal aggregation, and cleanup. React consumes the existing API service and displays the report. Dataset adapters and model training are separate from runtime inference.
 
-## Setup
-
-### Backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+```text
+video -> time sampling -> face crop -> 224x224 ImageNet preprocessing
+      -> EfficientNet-B0 -> frame probability -> temporal aggregation -> verdict
 ```
 
-The API loads `models/truthlens_efficientnet_b0.pt` once at startup. It returns an explicit error if that trained checkpoint is missing or cannot load; it never fabricates a score.
+## Kaggle DFDC workflow
 
-### Frontend
+The easiest training path is the Kaggle Deepfake Detection Challenge dataset. The scripts do not download dataset files or require Kaggle credentials. In Kaggle, attach the dataset or upload a downloaded DFDC chunk, clone this repository, and set paths through command arguments or `TRUTHLENS_DFDC_ROOT`.
 
-```bash
-cd frontend
-npm install
-npm run dev
+Expected local or Kaggle layout:
+
+```text
+data/raw/dfdc/
+  metadata.json
+  train_sample_videos/
+    video1.mp4
+  video1.mp4
+  video2.mp4
 ```
 
-The frontend defaults to `http://localhost:8000`. Set `VITE_API_URL` to a different backend origin, for example:
+For larger DFDC chunks, the adapter scans nested directories and accepts one `metadata.json` beside each chunk:
 
-```bash
-VITE_API_URL=http://localhost:8000 npm run dev
+```text
+/kaggle/input/dfdc-chunk-1/metadata.json
+/kaggle/input/dfdc-chunk-1/*.mp4
+/kaggle/input/dfdc-chunk-2/metadata.json
+/kaggle/input/dfdc-chunk-2/*.mp4
 ```
 
-## Dataset and training
+The metadata adapter reads `filename`, `label`, and `original`. It maps `REAL=0` and `FAKE=1`, binds each fake to its `original` source group, validates files, and prints missing-file statistics. It never silently treats missing metadata files as valid training data.
 
-FaceForensics++ is the primary dataset. It is access-controlled by its official research agreement; obtain the compressed `c23` videos through the official process and place them under the layout in [data/README.md](data/README.md). Dataset files, crops, manifests, and weights are ignored by Git. No dataset files are included here. Respect the dataset's license and terms.
+Kaggle commands:
 
-From the repository root:
+```bash
+cd /kaggle/working
+git clone https://github.com/thanusreeelangovan/truthlens-deepfake-detector.git
+cd truthlens-deepfake-detector
+python scripts/prepare_dfdc.py --raw-root /kaggle/input/dfdc
+python scripts/create_splits.py --input data/processed/dfdc/manifest.csv --output data/processed/dfdc/manifest.csv
+python scripts/extract_faces.py --manifest data/processed/dfdc/manifest.csv --output-root data/processed/dfdc/faces --interval-seconds 0.5
+python training/train.py --manifest data/processed/dfdc/faces/face_manifest.csv --checkpoint models/truthlens_efficientnet_b0.pt
+python training/evaluate.py --manifest data/processed/dfdc/faces/face_manifest.csv --checkpoint models/truthlens_efficientnet_b0.pt --split test
+```
+
+For local use, replace `/kaggle/input/dfdc` with `data/raw/dfdc`. Generated files are ignored by Git. Kaggle output files can be written under `/kaggle/working/` by passing absolute output paths.
+
+## FaceForensics++ compatibility
+
+The existing adapter remains available for officially obtained FaceForensics++ c23 files:
 
 ```bash
 python scripts/prepare_faceforensics.py
 python scripts/create_splits.py
-python scripts/extract_faces.py
-python training/train.py
-python training/evaluate.py
 ```
 
-The manifest is split at source-video level with a fixed seed into approximately 70% train, 15% validation, and 15% test. Frames from one source video cannot cross splits. `training/train.py` uses ImageNet-pretrained EfficientNet-B0, a two-class REAL/MANIPULATED head, weighted CrossEntropyLoss, AdamW, ReduceLROnPlateau, early stopping, checkpointing on validation F1, and CUDA mixed precision when available. It logs loss, accuracy, precision, recall, F1, and ROC AUC per epoch. `training/evaluate.py` reports accuracy, precision, recall, F1, ROC AUC, false-positive rate, false-negative rate, and confusion matrix for the selected split.
+It is not required for the DFDC path. Dataset files must be obtained under their respective access agreements and are not included here.
 
-## Inference pipeline
+## Training
 
-The deployed model is the locally trained EfficientNet-B0 checkpoint. Each largest detected face crop is resized to 224x224 and normalized with ImageNet mean `(0.485, 0.456, 0.406)` and standard deviation `(0.229, 0.224, 0.225)`. The manipulated-class softmax score is the frame-level manipulation probability.
+From the repository root:
 
-Frames are sampled once per second. Face crops are localized with OpenCV's bundled `haarcascade_frontalface_default.xml`, with a small margin. Frames with no usable face are skipped. A frame score is the mean score of its detected face crops.
+```bash
+python -m pip install -r backend/requirements.txt
+python training/train.py --manifest data/processed/dfdc/faces/face_manifest.csv
+```
 
-Classification thresholds are configuration constants in `backend/main.py`:
+The model is ImageNet-pretrained EfficientNet-B0 with a two-class REAL/MANIPULATED head. Training uses weighted CrossEntropyLoss, AdamW, ReduceLROnPlateau, early stopping, validation-F1 checkpointing, and CUDA mixed precision when available. CPU mode is supported for debugging but is substantially slower. Per epoch it logs training/validation loss, accuracy, precision, recall, F1, and ROC AUC when both classes are present.
 
-- `LIKELY_MANIPULATED` only when at least 45% of scored frames are at or above 0.65 and at least 3 suspicious frames are consecutive.
-- `LIKELY_AUTHENTIC` when no more than 15% of scored frames reach that threshold and median probability is at most 0.30.
-- `INCONCLUSIVE` for mixed evidence or no detectable faces.
+The best checkpoint is saved at `models/truthlens_efficientnet_b0.pt`.
 
-Aggregation also returns mean, median, variance, suspicious ratio, and longest suspicious sequence. These initial thresholds are configuration values, not calibrated claims.
+## Evaluation
 
-The response includes sampled frame indices, probabilities, face counts, suspicious ratio, signals, model ID, and the verdict. A single anomalous frame cannot determine the video verdict.
+```bash
+python training/evaluate.py --manifest data/processed/dfdc/faces/face_manifest.csv --checkpoint models/truthlens_efficientnet_b0.pt --split test
+```
 
-## API
+The report includes frame-level accuracy, precision, recall, F1, ROC AUC, false-positive rate, false-negative rate, and confusion matrix. It also reports video-level metrics by grouping crops belonging to one source group and applying the production aggregation logic. No metrics are claimed until this command is run on an actual dataset and checkpoint.
 
-- `GET /api/health`
-- `POST /api/upload` with multipart field `file`
-- `POST /api/analyze/{case_id}`
+## Runtime inference
 
-Uploads must use MP4, MOV, AVI, or WEBM, remain under 100 MB, and be readable by OpenCV. Uploaded videos and extracted crops are removed after analysis, including failed analysis attempts. The model checkpoint path can be changed with `TRUTHLENS_CHECKPOINT`.
+Start the backend from the repository root:
+
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+The backend loads `models/truthlens_efficientnet_b0.pt` once at startup. Override it with `TRUTHLENS_CHECKPOINT=/absolute/path/model.pt`. Without a checkpoint, `/api/health` returns `model_loaded: false` and analysis returns HTTP 503. No random or mock predictions are produced.
+
+Each face crop is resized to 224x224 and normalized with ImageNet mean `(0.485, 0.456, 0.406)` and standard deviation `(0.229, 0.224, 0.225)`. Frames are sampled by time interval, defaulting to one second in runtime and configurable with `--interval-seconds` during extraction. Frames without a usable face are skipped.
+
+Aggregation thresholds are centralized in [training/config.py](training/config.py): suspicious probability `0.65`, authentic ratio maximum `0.15`, authentic median maximum `0.30`, manipulated ratio minimum `0.45`, and minimum suspicious sequence length `3`. Verdicts are `LIKELY_AUTHENTIC`, `INCONCLUSIVE`, and `LIKELY_MANIPULATED`. A single high-probability frame cannot produce a manipulated verdict.
+
+The API returns case ID, analyzed frames, faces, frame probabilities, suspicious count and ratio, mean, median, variance, longest suspicious sequence, confidence, verdict, measurable indicators, and processing time.
 
 ## Project structure
 
 ```text
 data/README.md
+scripts/prepare_dfdc.py
 scripts/prepare_faceforensics.py
 scripts/create_splits.py
 scripts/extract_faces.py
@@ -88,38 +115,14 @@ training/train.py
 training/evaluate.py
 backend/utils/aggregation.py
 backend/utils/inference.py
-models/                         # local ignored checkpoints
+models/                         # ignored local checkpoints
 ```
 
-## Limitations
+## Tests and limitations
 
-The detector is probabilistic and has not been trained or evaluated in this repository until you run the supplied commands; this project therefore makes no accuracy claim. Performance depends on dataset distribution and manipulation type. Haar detection can miss faces, particularly under occlusion, unusual lighting, or large pose changes. EfficientNet frame scores do not establish provenance, intent, or legal authenticity. DFDC cross-dataset evaluation is intentionally not bundled because it requires separate Kaggle access; use `training/evaluate.py` with a compatible external manifest if available.
-# TruthLens — Deepfake Detection System
-
-## Quick start
-
-### Backend
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+pytest -q
+python -m py_compile backend/main.py backend/utils/*.py training/*.py scripts/*.py
 ```
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-# opens at http://localhost:5173
-```
-
-## Demo flow (for judges)
-1. Open http://localhost:5173
-2. Either upload a video OR click **Run demo analysis**
-3. Watch the live forensic pipeline animate step by step
-4. Read the verdict card, confidence score, and frame indicators
-
-## Git workflow
-- `backend-dev` → all Python changes
-- `frontend-dev` → all React changes
-- `main` → working merges only, push daily
+Tests cover DFDC metadata mapping, source-group linkage, missing-file reporting, split leakage, threshold boundaries, and the three verdict classes. Face detection can miss faces under occlusion, unusual pose, low resolution, or difficult lighting. Results depend on training distribution and manipulation type. This project makes no production-accuracy claim and does not establish provenance or legal authenticity.

@@ -24,4 +24,7 @@ class FaceCropDataset(Dataset):
     def __getitem__(self, index):
         row = self.rows.iloc[index]
         image = Image.open(row["face_path"]).convert("RGB")
-        return self.transform(image), torch.tensor(int(row["label"]), dtype=torch.long)
+        label = row["numeric_label"] if "numeric_label" in row else row["label"]
+        if isinstance(label, str) and label.upper() in {"REAL", "FAKE"}:
+            label = {"REAL": 0, "FAKE": 1}[label.upper()]
+        return self.transform(image), torch.tensor(int(label), dtype=torch.long)

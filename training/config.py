@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 
@@ -16,12 +17,15 @@ class TrainingConfig:
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_ROOT = PROJECT_ROOT / "data"
+DATA_ROOT = Path(os.getenv("TRUTHLENS_DATA_ROOT", PROJECT_ROOT / "data"))
 RAW_ROOT = DATA_ROOT / "raw" / "FaceForensics++"
+DFDC_ROOT = DATA_ROOT / "raw" / "dfdc"
 PROCESSED_ROOT = DATA_ROOT / "processed"
 MODEL_ROOT = PROJECT_ROOT / "models"
 DEFAULT_MANIFEST = PROCESSED_ROOT / "manifest.csv"
 DEFAULT_SPLITS = PROCESSED_ROOT / "splits.csv"
+DEFAULT_DFDC_MANIFEST = PROCESSED_ROOT / "dfdc" / "manifest.csv"
+DEFAULT_DFDC_FACE_MANIFEST = PROCESSED_ROOT / "dfdc" / "faces" / "face_manifest.csv"
 DEFAULT_CHECKPOINT = MODEL_ROOT / "truthlens_efficientnet_b0.pt"
 SUSPICIOUS_FRAME_THRESHOLD = 0.65
 AUTHENTIC_MEDIAN_THRESHOLD = 0.30

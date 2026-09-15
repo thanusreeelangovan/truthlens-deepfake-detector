@@ -1,8 +1,12 @@
 import csv
+import json
 from pathlib import Path
 
 from backend.utils.aggregation import aggregate_probabilities, longest_consecutive
+from backend.main import app
+from fastapi.testclient import TestClient
 from scripts.create_splits import create_splits
+from scripts.prepare_dfdc import build_manifest
 
 
 def test_video_split_has_no_source_leakage(tmp_path):
@@ -31,3 +35,37 @@ def test_threshold_boundary_requires_consistency():
     result = aggregate_probabilities([0.65, 0.1, 0.1, 0.1])
     assert result["verdict"] != "LIKELY_MANIPULATED"
     assert result["suspicious_frame_count"] == 1
+
+
+def test_dfdc_metadata_mapping_and_original_group(tmp_path):
+    root = tmp_path / "dfdc"
+    root.mkdir()
+    for filename in ("real.mp4", "fake.mp4"):
+        (root / filename).write_bytes(b"video")
+    (root / "metadata.json").write_text(json.dumps({
+        "real.mp4": {"label": "REAL", "original": None},
+        "fake.mp4": {"label": "FAKE", "original": "real.mp4"},
+    }))
+    output = tmp_path / "manifest.csv"
+    stats = build_manifest(root, output)
+    rows = list(csv.DictReader(output.open()))
+    assert stats["real_videos"] == 1
+    assert stats["fake_videos"] == 1
+    assert {row["numeric_label"] for row in rows} == {"0", "1"}
+    assert rows[0]["source_group"] == rows[1]["source_group"]
+
+
+def test_dfdc_missing_video_is_reported(tmp_path, capsys):
+    (tmp_path / "metadata.json").write_text(json.dumps({"missing.mp4": {"label": "REAL"}}))
+    output = tmp_path / "manifest.csv"
+    stats = build_manifest(tmp_path, output)
+    assert stats["missing_files"]
+    assert stats["present_videos"] == 0
+    assert "missing_files" in capsys.readouterr().out
+
+
+def test_health_reports_missing_checkpoint_without_fake_model():
+    with TestClient(app) as client:
+        response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["model_loaded"] is False
