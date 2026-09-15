@@ -58,6 +58,11 @@ def build_manifest(raw_root: Path, output: Path, strict: bool = False) -> dict:
     rows = []
     for metadata_path in find_metadata_files(raw_root):
         rows.extend(read_metadata(metadata_path))
+    for row in rows:
+        if not Path(row["video_path"]).is_file():
+            candidates = list(raw_root.rglob(Path(row["filename"]).name))
+            if len(candidates) == 1:
+                row["video_path"] = str(candidates[0].resolve())
     assign_source_groups(rows)
     missing = [row["video_path"] for row in rows if not Path(row["video_path"]).is_file()]
     if strict and missing:

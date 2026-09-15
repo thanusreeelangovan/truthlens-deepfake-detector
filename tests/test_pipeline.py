@@ -40,8 +40,10 @@ def test_threshold_boundary_requires_consistency():
 def test_dfdc_metadata_mapping_and_original_group(tmp_path):
     root = tmp_path / "dfdc"
     root.mkdir()
+    video_dir = root / "train_sample_videos"
+    video_dir.mkdir()
     for filename in ("real.mp4", "fake.mp4"):
-        (root / filename).write_bytes(b"video")
+        (video_dir / filename).write_bytes(b"video")
     (root / "metadata.json").write_text(json.dumps({
         "real.mp4": {"label": "REAL", "original": None},
         "fake.mp4": {"label": "FAKE", "original": "real.mp4"},
