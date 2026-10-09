@@ -30,7 +30,7 @@ jobs:
                   response.raise_for_status()
                   data = response.json()
                   print("HEALTH", data, flush=True)
-                  if data.get("model_loaded") and data.get("reference_research_model"):
+                  if data.get("model_loaded") and data.get("reference_research_model") and data.get("version") == "0.7.0":
                       ready = data
                       break
               except Exception as exc:
@@ -42,6 +42,7 @@ jobs:
           print("MODEL INFO", info, flush=True)
           assert info.get("reference_research_model") is True
           assert info.get("calibrated_probabilities") is False
+          assert info.get("reference_verdicts_suppressed") is True
 
           image_url = "https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/lena.jpg"
           with urllib.request.urlopen(image_url, timeout=40) as image_response:
