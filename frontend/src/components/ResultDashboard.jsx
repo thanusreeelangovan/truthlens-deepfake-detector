@@ -36,7 +36,7 @@ export default function ResultDashboard({ result, onReset }) {
   return (
     <div className="result-report">
       <div className="report-heading"><div><p className="eyebrow">CASE / {result.case_id.slice(0, 8).toUpperCase()}</p><h2>FORENSIC REPORT</h2></div><div><button className="button button-quiet" onClick={downloadReport}>DOWNLOAD JSON REPORT</button><button className="button button-quiet" onClick={onReset}>NEW CASE</button></div></div>
-      <div className="result-lead"><div><p className="eyebrow">VIDEO VERDICT</p><div className={`verdict-label ${verdictClass}`}>{result.verdict.replaceAll('_', ' ')}</div><p className="report-caption">Probabilistic assessment from {result.model}.</p></div><ConfidenceRing value={result.frames_analyzed ? result.mean_probability * 100 : null} fake={isManipulated} /></div>
+      <div className="result-lead"><div><p className="eyebrow">VIDEO VERDICT</p><div className={`verdict-label ${verdictClass}`}>{result.verdict.replaceAll('_', ' ')}</div><p className="report-caption">Experimental frame model signals from {result.model}. Not a verified authenticity assessment.</p></div><ConfidenceRing value={result.frames_analyzed ? result.mean_probability : null} fake={isManipulated} /></div>
       {result.research_reference_model && <p className="report-caption">Research reference model by Himanshu Kashyap (Xicor9), trained externally on FaceForensics++ C23. Not trained or validated by TruthLens. Results are experimental and not forensic proof. <a href="https://huggingface.co/Xicor9/efficientnet-b0-ffpp-c23" target="_blank" rel="noreferrer">Model attribution</a>.</p>}
       {result.screening_signal && <section style={{marginBottom: "1.5rem", padding: "1rem", border: "1px solid var(--border)"}}>
         <p className="eyebrow">EXPERIMENTAL SCREENING SIGNAL</p>
@@ -54,7 +54,7 @@ export default function ResultDashboard({ result, onReset }) {
 function ConfidenceRing({ value, fake }) {
   const r = 54
   const circ = 2 * Math.PI * r
-  const filled = ((value ?? 0) / 100) * circ
+  const filled = (value ?? 0) * circ
 
   return (
     <div className="confidence-ring-wrap">
@@ -70,9 +70,9 @@ function ConfidenceRing({ value, fake }) {
           transform="rotate(-90 70 70)"
         />
         <text x="70" y="64" textAnchor="middle" fontSize="28" fontWeight="700" fill={fake ? 'var(--signal)' : 'var(--safe)'}>
-          {value == null ? "N/A" : `${Math.round(value)}%`}
+          {value == null ? "N/A" : Number(value).toFixed(2)}
         </text>
-        <text x="70" y="82" textAnchor="middle" fontSize="11" fill="var(--muted)">mean score</text>
+        <text x="70" y="82" textAnchor="middle" fontSize="11" fill="var(--muted)">raw model score</text>
       </svg>
     </div>
   )
