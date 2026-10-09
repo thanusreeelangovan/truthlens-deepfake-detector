@@ -1,0 +1,78 @@
+name: Live TruthLens API smoke
+on:
+  push:
+    branches: [ops/live-smoke]
+  workflow_dispatch:
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install smoke dependencies
+        run: pip install requests opencv-python-headless==4.10.0.84 numpy==2.2.2
+      - name: Check model readiness and analyze a sample video
+        run: |
+          python - <<'PY'
+          import io, os, time, json, tempfile, urllib.request
+          import cv2
+          import numpy as np
+          import requests
+
+          base = "https://truthlens-api-cysu.onrender.com"
+          ready = None
+          for attempt in range(24):
+              try:
+                  response = requests.get(base + "/api/health", timeout=45)
+                  response.raise_for_status()
+                  data = response.json()
+                  print("HEALTH", data, flush=True)
+                  if data.get("model_loaded") and data.get("reference_research_model"):
+                      ready = data
+                      break
+              except Exception as exc:
+                  print("NOT READY", repr(exc), flush=True)
+              time.sleep(15)
+          assert ready, "Deployed model not loaded after retry window."
+
+          info = requests.get(base + "/api/model/info", timeout=60).json()
+          print("MODEL INFO", info, flush=True)
+          assert info.get("reference_research_model") is True
+          assert info.get("calibrated_probabilities") is False
+
+          image_url = "https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/lena.jpg"
+          with urllib.request.urlopen(image_url, timeout=40) as image_response:
+              payload = np.frombuffer(image_response.read(), dtype=np.uint8)
+          image = cv2.imdecode(payload, cv2.IMREAD_COLOR)
+          assert image is not None, "Sample image download failed."
+          cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+          assert len(cascade.detectMultiScale(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), 1.1, 5, minSize=(40,40))) > 0, "Smoke image must contain a usable face."
+          tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+          tmp.close()
+          writer = cv2.VideoWriter(tmp.name, cv2.VideoWriter_fourcc(*"mp4v"), 8, (image.shape[1], image.shape[0]))
+          assert writer.isOpened(), "Video encoding not supported on runner"
+          for i in range(48):
+              writer.write(image)
+          writer.release()
+          try:
+              with open(tmp.name, "rb") as video:
+                  uploaded = requests.post(base + "/api/upload", files={"file":("sample.mp4",video,"video/mp4")}, timeout=120)
+              print("UPLOAD", uploaded.status_code, uploaded.text[:1500],flush=True)
+              uploaded.raise_for_status()
+              case_id = uploaded.json()["case_id"]
+              analyzed = requests.post(base + "/api/analyze/" + case_id, timeout=240)
+              print("ANALYZE", analyzed.status_code, analyzed.text[:5000], flush=True)
+              analyzed.raise_for_status()
+              result = analyzed.json()
+              assert result["status"] == "complete"
+              assert result["frames_analyzed"] >= 3
+              assert result["research_reference_model"] is True
+              assert result["confidence"] is None
+              assert result["verdict"] in {"LIKELY_AUTHENTIC", "LIKELY_MANIPULATED", "INCONCLUSIVE"}
+              print("LIVE FULL VIDEO INFERENCE PASSED",result["frames_analyzed"],result["verdict"],flush=True)
+          finally:
+              os.remove(tmp.name)
+          PY
