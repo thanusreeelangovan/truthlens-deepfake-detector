@@ -2,6 +2,17 @@
 
 TruthLens is a local media-forensics workstation for a trainable, probabilistic deepfake detector. It samples video over time, detects faces, runs a trained EfficientNet-B0 classifier on face crops, and aggregates frame evidence into a confidence-aware verdict. It is not forensic proof.
 
+## Live research demo
+
+**Frontend:** [Open TruthLens experimental live demo](https://truthlens-web-hnkt.onrender.com)  
+**API readiness:** [Backend health](https://truthlens-api-cysu.onrender.com/api/health)
+
+The hosted version optionally runs the **externally trained** [Xicor9 EfficientNet-B0 FaceForensics++ C23 reference checkpoint](https://huggingface.co/Xicor9/efficientnet-b0-ffpp-c23) by Himanshu Kashyap. Its weights are downloaded at backend startup when `TRUTHLENS_REFERENCE_DEMO=1` is set. **TruthLens did not train that model**, and its published benchmark figures have not been independently reproduced here. It is an educational research demonstration, not forensic proof. The model is enabled only when the readiness endpoint reports `model_loaded: true`.
+
+Public hosting has resource and cold start limitations; short clips are recommended. The project training pipeline remains separate and allows replacing the reference checkpoint with independently trained, evaluated weights.
+
+**Accuracy caveat from live testing:** An end-to-end smoke test on October 10, 2026 successfully uploaded a six-second clip made from an unmanipulated face photograph and produced frame scores. The external model classified that constructed clip as `LIKELY_MANIPULATED`. This highlights potential false positives and dataset shift; the smoke test verifies API functionality only. No reliable real-world detection accuracy is claimed.
+
 ## Architecture
 
 The current FastAPI and React architecture is preserved. FastAPI owns upload validation, time-based OpenCV sampling, face localization, checkpoint inference, temporal aggregation, and cleanup. React consumes the existing API service and displays the report. Dataset adapters and model training are separate from runtime inference.
@@ -120,20 +131,20 @@ models/                         # ignored local checkpoints
 
 ## Model readiness and honesty
 
-**The GitHub repository does not contain a trained checkpoint.** The UI now refuses to start uploads if the backend reports \`model_loaded: false\`. To run detection, train a checkpoint with the documented dataset workflow and configure \`TRUTHLENS_CHECKPOINT\`; do not substitute mock predictions for a real trained model.
+**The GitHub repository does not contain a TruthLens-trained checkpoint.** The UI refuses uploads when the backend reports `model_loaded: false`. For your own model, train a checkpoint with the documented workflow and configure `TRUTHLENS_CHECKPOINT`. The hosted research demo can instead load the explicitly credited external checkpoint with `TRUTHLENS_REFERENCE_DEMO=1`. Neither approach justifies invented accuracy claims.
 
-The result's \`confidence\` field is now \`null\` because the heuristic aggregation policy has not been calibrated on held out videos. The displayed mean frame score is **not** a calibrated probability that the video is fake. Videos with fewer than three analyzable sampled frames receive \`INCONCLUSIVE\`. Temporal sequence length preserves gaps where no face was detected. The reference implementation intentionally analyzes the largest visible face per sampled frame. It does not yet perform multi-face tracking, speech analysis, C2PA verification, or live model progress reporting.
+The result's `confidence` field is now `null` because the heuristic aggregation policy has not been calibrated on held out videos. The displayed mean frame score is **not** a calibrated probability that the video is fake. Videos with fewer than three analyzable sampled frames receive `INCONCLUSIVE`. Temporal sequence length preserves gaps where no face was detected. The reference implementation intentionally analyzes the largest visible face per sampled frame. It does not yet perform multi-face tracking, speech analysis, C2PA verification, or live model progress reporting.
 
 Runtime limits are 100 MB and 120 seconds per video. Both limits are enforced by the backend and can be tightened for a public deployment. The API uses locally stored temporary files and deletes them after an analysis request. Case data and results are not persisted.
 
-To allow a deployed frontend origin, set \`TRUTHLENS_ALLOWED_ORIGINS\` to a comma-separated list of trusted HTTPS origins. The Vite frontend uses \`VITE_API_URL\` for the backend origin.
+To allow a deployed frontend origin, set `TRUTHLENS_ALLOWED_ORIGINS` to a comma-separated list of trusted HTTPS origins. The Vite frontend uses `VITE_API_URL` for the backend origin.
 
 ## Engineering release checklist
 
 1. Run the DFDC pipeline against actual video files (the adapter supports nested train_sample_videos directories).
-2. Confirm model checkpoint loading using \`GET /api/health\`.
+2. Confirm model checkpoint loading using `GET /api/health`.
 3. Run unit tests and the full frontend build.
-4. Run \`training/evaluate.py\` and report held out video outcomes, classification metrics, and abstention coverage.
+4. Run `training/evaluate.py` and report held out video outcomes, classification metrics, and abstention coverage.
 5. Validate the model on a distinct dataset before claiming real world generalization or calibrated confidence.
 6. Only then deploy both the backend with a licensed trained checkpoint and the frontend over HTTPS.
 
