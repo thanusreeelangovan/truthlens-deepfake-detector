@@ -17,6 +17,8 @@ from backend.utils.video_processor import save_video, extract_frames, find_video
 from backend.utils.face_detector import detect_faces
 from backend.utils.inference import InferenceEngine, MODEL_CHECKPOINT, MODEL_NAME
 from backend.utils.aggregation import aggregate_probabilities
+from backend.utils.quality import assess_frame_motion
+from backend.utils.research_policy import apply_result_policy
 from backend.utils.reference_model import download_reference_checkpoint, reference_enabled, SOURCE_URL
 
 inference_engine = None
@@ -25,7 +27,7 @@ model_error = None
 app = FastAPI(
     title="TruthLens AI",
     description="Real-time media authenticity analysis engine",
-    version="0.5.0",
+    version="0.7.0",
 )
 
 app.add_middleware(
@@ -40,7 +42,7 @@ app.add_middleware(
 @app.get("/api/health")
 async def health_check():
     return {"status": "ready" if inference_engine is not None else "model_unavailable",
-            "engine": "TruthLens AI", "version": "0.6.0",
+            "engine": "TruthLens AI", "version": "0.7.0",
             "model_loaded": inference_engine is not None,
             "model_source": inference_engine.model_source if inference_engine else None,
             "reference_research_model": bool(inference_engine and inference_engine.reference),
@@ -75,7 +77,8 @@ def model_info():
         "reference_research_model": bool(inference_engine and inference_engine.reference),
         "reference_model_card": SOURCE_URL if inference_engine and inference_engine.reference else None,
         "calibrated_probabilities": False,
-        "decision_policy": "heuristic_temporal_v1",
+        "decision_policy": "reference_screening_abstain_v1" if inference_engine and inference_engine.reference else "heuristic_temporal_v1",
+        "reference_verdicts_suppressed": bool(inference_engine and inference_engine.reference),
         "max_file_size_mb": MAX_FILE_SIZE_MB,
         "max_duration_seconds": MAX_DURATION_SECONDS,
     }
@@ -110,9 +113,25 @@ def analyze_case(case_id: str):
         started = time.perf_counter()
         extraction = extract_frames(case_id)
         faces = detect_faces(extraction["frame_paths"], case_frame_dir, extraction["frame_timestamps"])
-        frame_probabilities = inference_engine.predict(faces["face_crops"])
+        # The reference author's published method classifies complete video frames,
+        # not our DFDC-trained padded face crops. Keep face detection to require
+        # recognizable facial evidence, but feed the reference checkpoint frames.
+        if inference_engine.reference:
+            samples = [
+                {
+                    "frame_index": index,
+                    "timestamp_seconds": extraction["frame_timestamps"][index],
+                    "path": extraction["frame_paths"][index],
+                }
+                for index in faces["frames_with_faces"]
+            ]
+        else:
+            samples = faces["face_crops"]
+        frame_probabilities = inference_engine.predict(samples)
         values = [item["fake_probability"] for item in frame_probabilities]
         aggregate = aggregate_probabilities(values, frame_indices=[item["frame_index"] for item in frame_probabilities])
+        quality = assess_frame_motion([sample["path"] for sample in samples])
+        policy = apply_result_policy(aggregate["verdict"], reference=inference_engine.reference, frame_quality=quality)
         signals = []
         if aggregate["suspicious_frame_count"]:
             signals.append(f"{aggregate['suspicious_frame_count']} of {len(values)} analyzed frames showed elevated manipulation probability.")
@@ -124,6 +143,8 @@ def analyze_case(case_id: str):
             signals.append("Too few analyzable frames for a meaningful verdict.")
         elif not signals:
             signals.append("No sustained elevated manipulation probability was measured.")
+        if policy["reason"]:
+            signals.insert(0, policy["reason"])
         signals.append("Model outputs and thresholds are not calibrated forensic confidence.")
 
         return {
@@ -133,7 +154,10 @@ def analyze_case(case_id: str):
             "suspicious_frame_count": aggregate["suspicious_frame_count"], "suspicious_ratio": aggregate["suspicious_ratio"],
             "mean_probability": aggregate["mean_probability"], "median_probability": aggregate["median_probability"],
             "probability_variance": aggregate["probability_variance"], "longest_suspicious_sequence": aggregate["longest_suspicious_sequence"],
-            "frame_probabilities": frame_probabilities, "verdict": aggregate["verdict"], "confidence": aggregate["confidence"], "confidence_calibrated": False, "decision_policy": aggregate["decision_policy"],
+            "frame_probabilities": frame_probabilities, "verdict": policy["verdict"], "confidence": None, "confidence_calibrated": False,
+            "decision_policy": "reference_screening_abstain_v1" if inference_engine.reference else aggregate["decision_policy"],
+            "screening_signal": policy["screening_signal"], "decision_reason_code": policy["reason_code"],
+            "research_evaluation_required": policy["research_evaluation_required"], "frame_quality": quality,
             "manipulation_indicators": signals, "explanation_signals": signals,
             "model": inference_engine.model_name,
             "model_source": inference_engine.model_source,

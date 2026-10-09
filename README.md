@@ -2,6 +2,14 @@
 
 TruthLens is a local media-forensics workstation for a trainable, probabilistic deepfake detector. It samples video over time, detects faces, runs a trained EfficientNet-B0 classifier on face crops, and aggregates frame evidence into a confidence-aware verdict. It is not forensic proof.
 
+## False positives and research verdict safeguards (v0.7)
+
+The previous hosted research baseline produced a false positive on an authentic face-photo clip, demonstrating that a passing inference test is **not evidence of accuracy**. The Xicor9 reference model's model card maps class 0 to real, class 1 to fake, and shows **full frames resized to 224×224 with ToTensor only**, rather than tightly cropped face patches. The hosted research path now follows that documented input format, while continuing to require at least one detectable face in each analyzed frame.
+
+Until a representative labelled authentic/manipulated dataset is evaluated, the third-party reference is **screening-only**: its internal aggregate is available through the frame scores, but the public verdict is \`INCONCLUSIVE\` with a distinct \`LOW_MODEL_SIGNAL\`, \`MIXED_MODEL_SIGNAL\`, or \`ELEVATED_MODEL_SIGNAL\`. A nearly static video also receives \`INCONCLUSIVE\` as its frames are not independent temporal observations. These guards avoid unsupported fake/real accusations; they do not improve model accuracy.
+
+For meaningful authentic-versus-manipulated classification, independently evaluate both classes on held-out videos matching the intended use, investigate false positives and compression/lighting sensitivity, determine calibrated operating thresholds, and document error rates with abstention coverage. Do not tune a threshold solely to pass a handful of demo videos.
+
 ## Live research demo
 
 **Frontend:** [Open TruthLens experimental live demo](https://truthlens-web-hnkt.onrender.com)  
