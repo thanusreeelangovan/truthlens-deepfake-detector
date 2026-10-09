@@ -23,12 +23,12 @@ model_error = None
 app = FastAPI(
     title="TruthLens AI",
     description="Real-time media authenticity analysis engine",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=os.getenv("TRUTHLENS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,7 +37,7 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "online", "engine": "TruthLens AI", "version": "0.4.0", "model_loaded": inference_engine is not None, "model_error": model_error}
+    return {"status": "ready" if inference_engine is not None else "model_unavailable", "engine": "TruthLens AI", "version": "0.5.0", "model_loaded": inference_engine is not None, "model_error": model_error or (None if inference_engine is not None else "Trained checkpoint not installed.")}
 
 
 @app.on_event("startup")
@@ -63,24 +63,29 @@ async def upload_video(file: UploadFile = File(...)):
 
 
 @app.post("/api/analyze/{case_id}")
-async def analyze_case(case_id: str):
+def analyze_case(case_id: str):
     case_frame_dir = os.path.join(FRAMES_DIR, case_id)
     try:
         if inference_engine is None:
             raise HTTPException(status_code=503, detail=model_error or f"Trained checkpoint not found at '{MODEL_CHECKPOINT}'.")
         started = time.perf_counter()
         extraction = extract_frames(case_id)
-        faces = detect_faces(extraction["frame_paths"], case_frame_dir)
+        faces = detect_faces(extraction["frame_paths"], case_frame_dir, extraction["frame_timestamps"])
         frame_probabilities = inference_engine.predict(faces["face_crops"])
         values = [item["fake_probability"] for item in frame_probabilities]
-        aggregate = aggregate_probabilities(values)
+        aggregate = aggregate_probabilities(values, frame_indices=[item["frame_index"] for item in frame_probabilities])
         signals = []
         if aggregate["suspicious_frame_count"]:
             signals.append(f"{aggregate['suspicious_frame_count']} of {len(values)} analyzed frames showed elevated manipulation probability.")
         if aggregate["longest_suspicious_sequence"]:
             signals.append(f"Manipulation probability remained elevated across {aggregate['longest_suspicious_sequence']} consecutive frames.")
-        if not signals:
+        if not values:
+            signals.append("No usable face found. Authenticity cannot be assessed.")
+        elif len(values) < 3:
+            signals.append("Too few analyzable frames for a meaningful verdict.")
+        elif not signals:
             signals.append("No sustained elevated manipulation probability was measured.")
+        signals.append("Model outputs and thresholds are not calibrated forensic confidence.")
 
         return {
             "status": "complete", "case_id": case_id, "fps": extraction["fps"],
@@ -89,7 +94,7 @@ async def analyze_case(case_id: str):
             "suspicious_frame_count": aggregate["suspicious_frame_count"], "suspicious_ratio": aggregate["suspicious_ratio"],
             "mean_probability": aggregate["mean_probability"], "median_probability": aggregate["median_probability"],
             "probability_variance": aggregate["probability_variance"], "longest_suspicious_sequence": aggregate["longest_suspicious_sequence"],
-            "frame_probabilities": frame_probabilities, "verdict": aggregate["verdict"], "confidence": aggregate["confidence"],
+            "frame_probabilities": frame_probabilities, "verdict": aggregate["verdict"], "confidence": aggregate["confidence"], "confidence_calibrated": False, "decision_policy": aggregate["decision_policy"],
             "manipulation_indicators": signals, "explanation_signals": signals, "model": MODEL_NAME,
             "processing_time_ms": round((time.perf_counter() - started) * 1000, 2),
             "stages": [

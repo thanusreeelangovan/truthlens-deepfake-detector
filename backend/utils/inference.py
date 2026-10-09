@@ -10,7 +10,7 @@ from training.model import IMAGENET_MEAN, IMAGENET_STD, load_checkpoint
 
 DEFAULT_CHECKPOINT = Path(__file__).resolve().parents[2] / "models" / "truthlens_efficientnet_b0.pt"
 MODEL_CHECKPOINT = os.getenv("TRUTHLENS_CHECKPOINT", str(DEFAULT_CHECKPOINT))
-MODEL_NAME = "EfficientNet-B0 fine-tuned on FaceForensics++ c23 face crops"
+MODEL_NAME = "EfficientNet-B0 trained checkpoint; dataset not yet independently verified"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -41,4 +41,5 @@ class InferenceEngine:
             except torch.cuda.OutOfMemoryError as exc:
                 raise RuntimeError("GPU memory was exhausted during inference.") from exc
             by_frame.setdefault(crop["frame_index"], []).append(probability)
-        return [{"frame_index": index, "fake_probability": round(sum(values) / len(values), 4)} for index, values in sorted(by_frame.items())]
+        timestamps = {crop["frame_index"]: crop.get("timestamp_seconds") for crop in face_crops}
+        return [{"frame_index": index, "timestamp_seconds": timestamps.get(index), "fake_probability": round(sum(values) / len(values), 4)} for index, values in sorted(by_frame.items())]
