@@ -6,6 +6,7 @@ Path: backend/main.py
 import os
 import sys
 import time
+import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -51,7 +52,9 @@ async def load_detector():
 
 
 @app.post("/api/upload")
-async def upload_video(file: UploadFile = File(...)):
+def upload_video(file: UploadFile = File(...)):
+    if inference_engine is None:
+        raise HTTPException(status_code=503, detail="Trained model unavailable. Upload disabled.")
     result = save_video(file)
     return {
         "status": "received",
@@ -64,6 +67,12 @@ async def upload_video(file: UploadFile = File(...)):
 
 @app.post("/api/analyze/{case_id}")
 def analyze_case(case_id: str):
+    # Reject unsafe identifiers BEFORE touching a filesystem path or entering cleanup.
+    try:
+        if str(uuid.UUID(case_id)) != case_id:
+            raise ValueError("Case ID is not canonical.")
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid case ID.") from None
     case_frame_dir = os.path.join(FRAMES_DIR, case_id)
     try:
         if inference_engine is None:

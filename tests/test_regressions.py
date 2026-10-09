@@ -111,3 +111,14 @@ def test_extracted_crops_are_unique_per_video_with_shared_source(tmp_path, monke
     assert first and second
     assert Path(first[0]["face_path"]).parent != Path(second[0]["face_path"]).parent
     assert first[0]["timestamp_seconds"] == 0.0
+
+
+def test_invalid_analysis_case_is_rejected_before_cleanup():
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    with TestClient(app) as client:
+        response = client.post("/api/analyze/../../invalid")
+    # Routing normalization may reject an unsafe path before FastAPI reaches the handler.
+    assert response.status_code in (400, 404)
+    response = client.post("/api/analyze/not-a-uuid")
+    assert response.status_code == 400

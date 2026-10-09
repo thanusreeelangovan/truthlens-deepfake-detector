@@ -11,7 +11,6 @@ import { analyzeCase } from '../services/api'
 
 function ProgressPanel({ caseId, onComplete, onBack }) {
   const [error, setError] = useState(null)
-  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -33,7 +32,7 @@ function ProgressPanel({ caseId, onComplete, onBack }) {
 
     run()
     return () => { cancelled = true }
-  }, [caseId, attempt, onComplete])
+  }, [caseId, onComplete])
 
   return (
     <div>
@@ -45,7 +44,7 @@ function ProgressPanel({ caseId, onComplete, onBack }) {
 
       <div className="stage-list"><div className="stage-row active"><span className="stage-dot" /><span>SERVER ANALYSIS REQUEST</span><strong>RUNNING</strong></div></div>
       <p className="progress-note">The server is executing frame sampling, face localization, feature extraction, authenticity inference, temporal aggregation, and the video verdict in sequence.</p>
-      {error && <><p className="error-message">{error}</p><button className="button button-primary" onClick={() => setAttempt(v => v + 1)}>RETRY ANALYSIS</button><button className="button button-quiet" onClick={onBack}>NEW UPLOAD</button></>}
+      {error && <><p className="error-message">{error}</p><button className="button button-quiet" onClick={onBack}>UPLOAD ANOTHER VIDEO</button></>}
     </div>
   )
 }

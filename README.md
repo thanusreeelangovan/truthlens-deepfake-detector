@@ -35,7 +35,7 @@ For larger DFDC chunks, the adapter scans nested directories and accepts one `me
 /kaggle/input/dfdc-chunk-2/*.mp4
 ```
 
-The metadata adapter reads `filename`, `label`, and `original`. It maps `REAL=0` and `FAKE=1`, binds each fake to its `original` source group, validates files, and prints missing-file statistics. It never silently treats missing metadata files as valid training data.
+The metadata adapter reads `filename`, `label`, and `original`. It maps `REAL=0` and `FAKE=1`, binds each fake to its `original` source group, validates files, and prints missing-file statistics. It never silently treats missing metadata files as valid training data. Each video also receives a unique `video_id` distinct from its `source_group`, preventing crop directory collisions.
 
 Kaggle commands:
 
@@ -74,7 +74,7 @@ python training/train.py --manifest data/processed/dfdc/faces/face_manifest.csv
 
 The model is ImageNet-pretrained EfficientNet-B0 with a two-class REAL/MANIPULATED head. Training uses weighted CrossEntropyLoss, AdamW, ReduceLROnPlateau, early stopping, validation-F1 checkpointing, and CUDA mixed precision when available. CPU mode is supported for debugging but is substantially slower. Per epoch it logs training/validation loss, accuracy, precision, recall, F1, and ROC AUC when both classes are present.
 
-The best checkpoint is saved at `models/truthlens_efficientnet_b0.pt`.
+The best checkpoint is saved at `models/truthlens_efficientnet_b0.pt`. Training and runtime share the same largest-face crop and margin implementation.
 
 ## Evaluation
 
@@ -82,7 +82,7 @@ The best checkpoint is saved at `models/truthlens_efficientnet_b0.pt`.
 python training/evaluate.py --manifest data/processed/dfdc/faces/face_manifest.csv --checkpoint models/truthlens_efficientnet_b0.pt --split test
 ```
 
-The report includes frame-level accuracy, precision, recall, F1, ROC AUC, false-positive rate, false-negative rate, and confusion matrix. It also reports video-level metrics by grouping crops belonging to one source group and applying the production aggregation logic. No metrics are claimed until this command is run on an actual dataset and checkpoint.
+The report includes frame-level accuracy, precision, recall, F1, ROC AUC, false-positive rate, false-negative rate, and confusion matrix. It also reports video-level metrics by grouping crops by individual video, applying the production aggregation logic, and reporting inconclusive outcomes as abstentions rather than authentic predictions. No metrics are claimed until this command is run on an actual dataset and checkpoint.
 
 ## Runtime inference
 
@@ -96,9 +96,9 @@ The backend loads `models/truthlens_efficientnet_b0.pt` once at startup. Overrid
 
 Each face crop is resized to 224x224 and normalized with ImageNet mean `(0.485, 0.456, 0.406)` and standard deviation `(0.229, 0.224, 0.225)`. Frames are sampled by time interval, defaulting to one second in runtime and configurable with `--interval-seconds` during extraction. Frames without a usable face are skipped.
 
-Aggregation thresholds are centralized in [training/config.py](training/config.py): suspicious probability `0.65`, authentic ratio maximum `0.15`, authentic median maximum `0.30`, manipulated ratio minimum `0.45`, and minimum suspicious sequence length `3`. Verdicts are `LIKELY_AUTHENTIC`, `INCONCLUSIVE`, and `LIKELY_MANIPULATED`. A single high-probability frame cannot produce a manipulated verdict.
+Uncalibrated heuristic aggregation thresholds are centralized in [training/config.py](training/config.py): suspicious frame score `0.65`, authentic ratio maximum `0.15`, authentic median maximum `0.30`, manipulated ratio minimum `0.45`, and minimum suspicious sequence length `3`. Verdicts are `LIKELY_AUTHENTIC`, `INCONCLUSIVE`, and `LIKELY_MANIPULATED`. A single high-probability frame cannot produce a manipulated verdict.
 
-The API returns case ID, analyzed frames, faces, frame probabilities, suspicious count and ratio, mean, median, variance, longest suspicious sequence, confidence, verdict, measurable indicators, and processing time.
+The API returns a case ID, analyzed frames, sample timestamps, scores, aggregates, abstention-aware verdict, measurable indicators, and processing time. Calibration has not been established, so confidence is null.
 
 ## Project structure
 
@@ -117,6 +117,25 @@ backend/utils/aggregation.py
 backend/utils/inference.py
 models/                         # ignored local checkpoints
 ```
+
+## Model readiness and honesty
+
+**The GitHub repository does not contain a trained checkpoint.** The UI now refuses to start uploads if the backend reports \`model_loaded: false\`. To run detection, train a checkpoint with the documented dataset workflow and configure \`TRUTHLENS_CHECKPOINT\`; do not substitute mock predictions for a real trained model.
+
+The result's \`confidence\` field is now \`null\` because the heuristic aggregation policy has not been calibrated on held out videos. The displayed mean frame score is **not** a calibrated probability that the video is fake. Videos with fewer than three analyzable sampled frames receive \`INCONCLUSIVE\`. Temporal sequence length preserves gaps where no face was detected. The reference implementation intentionally analyzes the largest visible face per sampled frame. It does not yet perform multi-face tracking, speech analysis, C2PA verification, or live model progress reporting.
+
+Runtime limits are 100 MB and 120 seconds per video. Both limits are enforced by the backend and can be tightened for a public deployment. The API uses locally stored temporary files and deletes them after an analysis request. Case data and results are not persisted.
+
+To allow a deployed frontend origin, set \`TRUTHLENS_ALLOWED_ORIGINS\` to a comma-separated list of trusted HTTPS origins. The Vite frontend uses \`VITE_API_URL\` for the backend origin.
+
+## Engineering release checklist
+
+1. Run the DFDC pipeline against actual video files (the adapter supports nested train_sample_videos directories).
+2. Confirm model checkpoint loading using \`GET /api/health\`.
+3. Run unit tests and the full frontend build.
+4. Run \`training/evaluate.py\` and report held out video outcomes, classification metrics, and abstention coverage.
+5. Validate the model on a distinct dataset before claiming real world generalization or calibrated confidence.
+6. Only then deploy both the backend with a licensed trained checkpoint and the frontend over HTTPS.
 
 ## Tests and limitations
 
