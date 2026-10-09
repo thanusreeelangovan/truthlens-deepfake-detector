@@ -1,4 +1,4 @@
-"""Batched, checkpoint-backed inference on consistently preprocessed face crops."""
+"""Batched checkpoint inference on face crops or full frames, per model provenance."""
 import os
 from pathlib import Path
 
@@ -38,6 +38,7 @@ class InferenceEngine:
         self.transform = transforms.Compose(steps)
 
     def predict(self, face_crops: list[dict]) -> list[dict]:
+        """Sample path is a padded face crop for TruthLens, full frame for FF++ reference."""
         output = []
         tensors, metadata = [], []
 
