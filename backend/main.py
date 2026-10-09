@@ -17,6 +17,7 @@ from backend.utils.video_processor import save_video, extract_frames, find_video
 from backend.utils.face_detector import detect_faces
 from backend.utils.inference import InferenceEngine, MODEL_CHECKPOINT, MODEL_NAME
 from backend.utils.aggregation import aggregate_probabilities
+from backend.utils.reference_model import download_reference_checkpoint, reference_enabled, SOURCE_URL
 
 inference_engine = None
 model_error = None
@@ -38,24 +39,41 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ready" if inference_engine is not None else "model_unavailable", "engine": "TruthLens AI", "version": "0.5.0", "model_loaded": inference_engine is not None, "model_error": model_error or (None if inference_engine is not None else "Trained checkpoint not installed.")}
+    return {"status": "ready" if inference_engine is not None else "model_unavailable",
+            "engine": "TruthLens AI", "version": "0.6.0",
+            "model_loaded": inference_engine is not None,
+            "model_source": inference_engine.model_source if inference_engine else None,
+            "reference_research_model": bool(inference_engine and inference_engine.reference),
+            "model_error": model_error or (None if inference_engine is not None else "Trained checkpoint not installed.")}
 
 
 @app.on_event("startup")
 async def load_detector():
     global inference_engine, model_error
-    if os.path.exists(MODEL_CHECKPOINT):
-        try:
+    inference_engine, model_error = None, None
+    try:
+        if os.path.exists(MODEL_CHECKPOINT):
             inference_engine = InferenceEngine(MODEL_CHECKPOINT)
-        except RuntimeError as exc:
-            model_error = str(exc)
+        elif reference_enabled():
+            # Opt-in research baseline; not the user's own trained model.
+            checkpoint = download_reference_checkpoint()
+            inference_engine = InferenceEngine(str(checkpoint), reference=True)
+        else:
+            model_error = "No trained checkpoint configured. Reference demo is disabled."
+    except Exception as exc:
+        # Health remains available even when the model or download fails.
+        model_error = f"Model unavailable: {type(exc).__name__}: {exc}"
+        inference_engine = None
 
 
 @app.get("/api/model/info")
 def model_info():
     return {
-        "name": MODEL_NAME,
+        "name": inference_engine.model_name if inference_engine else MODEL_NAME,
         "model_loaded": inference_engine is not None,
+        "model_source": inference_engine.model_source if inference_engine else None,
+        "reference_research_model": bool(inference_engine and inference_engine.reference),
+        "reference_model_card": SOURCE_URL if inference_engine and inference_engine.reference else None,
         "calibrated_probabilities": False,
         "decision_policy": "heuristic_temporal_v1",
         "max_file_size_mb": MAX_FILE_SIZE_MB,
@@ -116,7 +134,10 @@ def analyze_case(case_id: str):
             "mean_probability": aggregate["mean_probability"], "median_probability": aggregate["median_probability"],
             "probability_variance": aggregate["probability_variance"], "longest_suspicious_sequence": aggregate["longest_suspicious_sequence"],
             "frame_probabilities": frame_probabilities, "verdict": aggregate["verdict"], "confidence": aggregate["confidence"], "confidence_calibrated": False, "decision_policy": aggregate["decision_policy"],
-            "manipulation_indicators": signals, "explanation_signals": signals, "model": MODEL_NAME,
+            "manipulation_indicators": signals, "explanation_signals": signals,
+            "model": inference_engine.model_name,
+            "model_source": inference_engine.model_source,
+            "research_reference_model": inference_engine.reference,
             "processing_time_ms": round((time.perf_counter() - started) * 1000, 2),
             "stages": [
                 {"key": "sampling", "label": "Frame sampling", "status": "complete"},
