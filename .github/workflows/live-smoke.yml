@@ -71,7 +71,11 @@ jobs:
               assert result["frames_analyzed"] >= 3
               assert result["research_reference_model"] is True
               assert result["confidence"] is None
-              assert result["verdict"] in {"LIKELY_AUTHENTIC", "LIKELY_MANIPULATED", "INCONCLUSIVE"}
+              assert result["verdict"] == "INCONCLUSIVE", result
+              assert result["decision_policy"] == "reference_screening_abstain_v1", result
+              assert result["frame_quality"]["near_static_video"] is True, result
+              assert result["decision_reason_code"] == "NEAR_STATIC_VIDEO", result
+              assert result["screening_signal"] == "INSUFFICIENT_TEMPORAL_EVIDENCE", result
               print("LIVE FULL VIDEO INFERENCE PASSED",result["frames_analyzed"],result["verdict"],flush=True)
           finally:
               os.remove(tmp.name)
