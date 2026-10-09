@@ -11,6 +11,8 @@ The hosted version optionally runs the **externally trained** [Xicor9 EfficientN
 
 Public hosting has resource and cold start limitations; short clips are recommended. The project training pipeline remains separate and allows replacing the reference checkpoint with independently trained, evaluated weights.
 
+**Accuracy caveat from live testing:** An end-to-end smoke test on October 10, 2026 successfully uploaded a six-second clip made from an unmanipulated face photograph and produced frame scores. The external model classified that constructed clip as `LIKELY_MANIPULATED`. This highlights potential false positives and dataset shift; the smoke test verifies API functionality only. No reliable real-world detection accuracy is claimed.
+
 ## Architecture
 
 The current FastAPI and React architecture is preserved. FastAPI owns upload validation, time-based OpenCV sampling, face localization, checkpoint inference, temporal aggregation, and cleanup. React consumes the existing API service and displays the report. Dataset adapters and model training are separate from runtime inference.
