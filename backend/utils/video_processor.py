@@ -1,117 +1,112 @@
-"""
-Video validation, storage, and frame extraction.
-Path: backend/utils/video_processor.py
-"""
-
+"""Bounded video upload and timestamped frame sampling."""
 import os
 import uuid
-import shutil
+from pathlib import Path
+
 import cv2
 from fastapi import UploadFile, HTTPException
 
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm"}
 MAX_FILE_SIZE_MB = 100
-UPLOAD_DIR = "storage/uploads"
-FRAMES_DIR = "storage/frames"
+MAX_UPLOAD_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_DURATION_SECONDS = 120
+MAX_SAMPLED_FRAMES = 120
 SAMPLE_INTERVAL_SECONDS = 1.0
-
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(FRAMES_DIR, exist_ok=True)
+ROOT_DIR = Path(__file__).resolve().parents[2]
+UPLOAD_DIR = str(ROOT_DIR / "storage" / "uploads")
+FRAMES_DIR = str(ROOT_DIR / "storage" / "frames")
+Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+Path(FRAMES_DIR).mkdir(parents=True, exist_ok=True)
 
 
 def validate_video(file: UploadFile) -> None:
     if not file.filename:
-        raise HTTPException(status_code=400, detail="A video filename is required.")
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported format '{ext}'. Accepted: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
-        )
+        raise HTTPException(400, "A video filename is required.")
+    extension = Path(file.filename).suffix.lower()
+    if extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"Unsupported format '{extension}'.")
 
 
 def save_video(file: UploadFile) -> dict:
     validate_video(file)
-
     case_id = str(uuid.uuid4())
-    ext = os.path.splitext(file.filename)[1].lower()
-    dest_path = os.path.join(UPLOAD_DIR, f"{case_id}{ext}")
-
-    with open(dest_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    size_mb = os.path.getsize(dest_path) / (1024 * 1024)
-    if size_mb > MAX_FILE_SIZE_MB:
-        os.remove(dest_path)
-        raise HTTPException(
-            status_code=400,
-            detail=f"File exceeds {MAX_FILE_SIZE_MB}MB limit ({size_mb:.1f}MB submitted).",
-        )
-
-    capture = cv2.VideoCapture(dest_path)
-    valid = capture.isOpened() and capture.get(cv2.CAP_PROP_FRAME_COUNT) > 0
-    capture.release()
-    if not valid:
-        os.remove(dest_path)
-        raise HTTPException(status_code=400, detail="The uploaded file is not a readable video.")
-
-    return {
-        "case_id": case_id,
-        "filename": file.filename,
-        "path": dest_path,
-        "size_mb": round(size_mb, 2),
-    }
+    extension = Path(file.filename).suffix.lower()
+    dest_path = Path(UPLOAD_DIR) / f"{case_id}{extension}"
+    size = 0
+    try:
+        with dest_path.open("wb") as target:
+            while chunk := file.file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, f"File exceeds the {MAX_FILE_SIZE_MB} MB upload limit.")
+                target.write(chunk)
+        capture = cv2.VideoCapture(str(dest_path))
+        try:
+            fps = float(capture.get(cv2.CAP_PROP_FPS))
+            frame_count = float(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            valid = capture.isOpened() and fps > 0 and frame_count > 0
+            duration = frame_count / fps if valid else 0
+        finally:
+            capture.release()
+        if not valid:
+            raise HTTPException(400, "Uploaded file is not a readable video.")
+        if duration > MAX_DURATION_SECONDS:
+            raise HTTPException(413, f"Video duration must not exceed {MAX_DURATION_SECONDS} seconds.")
+    except BaseException:
+        dest_path.unlink(missing_ok=True)
+        raise
+    return {"case_id": case_id, "filename": file.filename, "path": str(dest_path), "size_mb": round(size / 1048576, 2)}
 
 
 def find_video_path(case_id: str) -> str:
-    for ext in ALLOWED_EXTENSIONS:
-        candidate = os.path.join(UPLOAD_DIR, f"{case_id}{ext}")
-        if os.path.exists(candidate):
-            return candidate
-    raise HTTPException(status_code=404, detail=f"No case file found for {case_id}")
+    try:
+        if str(uuid.UUID(case_id)) != case_id:
+            raise ValueError("Noncanonical UUID")
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Invalid case ID.") from None
+    for extension in ALLOWED_EXTENSIONS:
+        candidate = Path(UPLOAD_DIR) / f"{case_id}{extension}"
+        if candidate.is_file():
+            return str(candidate)
+    raise HTTPException(404, f"No uploaded video for case {case_id}.")
 
 
 def extract_frames(case_id: str) -> dict:
-    """
-    Samples at a time interval so sampling is independent of source FPS.
-    """
     video_path = find_video_path(case_id)
-    case_frame_dir = os.path.join(FRAMES_DIR, case_id)
-    os.makedirs(case_frame_dir, exist_ok=True)
-
+    frame_dir = Path(FRAMES_DIR) / case_id
+    frame_dir.mkdir(parents=True, exist_ok=True)
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise HTTPException(status_code=400, detail="Could not read video file — it may be corrupted.")
-
-    fps = cap.get(cv2.CAP_PROP_FPS) or 0
+        raise HTTPException(400, "Could not read uploaded video.")
+    fps = float(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
     if fps <= 0:
         cap.release()
-        raise HTTPException(status_code=400, detail="Could not determine the video's frame rate.")
-
-    frame_paths = []
-    idx = 0
-    saved = 0
+        raise HTTPException(400, "Could not determine video frame rate.")
+    if total_frames > 0 and total_frames / fps > MAX_DURATION_SECONDS:
+        cap.release()
+        raise HTTPException(413, "Video duration limit exceeded.")
+    frame_paths, timestamps = [], []
+    decoded = 0
     next_sample_time = 0.0
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        timestamp = idx / fps
-        if timestamp + (1 / fps) >= next_sample_time:
-            frame_path = os.path.join(case_frame_dir, f"frame_{saved:04d}.jpg")
-            cv2.imwrite(frame_path, frame)
-            frame_paths.append(frame_path)
-            saved += 1
-            next_sample_time += SAMPLE_INTERVAL_SECONDS
-        idx += 1
-    cap.release()
-
-    return {
-        "case_id": case_id,
-        "fps": round(fps, 2),
-        "total_frames": total_frames,
-        "sampled_frames": saved,
-        "frame_paths": frame_paths,
-    }
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            timestamp = decoded / fps
+            if timestamp > MAX_DURATION_SECONDS:
+                raise HTTPException(413, "Video duration limit exceeded.")
+            if timestamp + 1 / fps >= next_sample_time:
+                if len(frame_paths) >= MAX_SAMPLED_FRAMES:
+                    break
+                frame_path = frame_dir / f"frame_{len(frame_paths):04d}.jpg"
+                if cv2.imwrite(str(frame_path), frame):
+                    frame_paths.append(str(frame_path))
+                    timestamps.append(round(timestamp, 3))
+                next_sample_time += SAMPLE_INTERVAL_SECONDS
+            decoded += 1
+    finally:
+        cap.release()
+    return {"case_id": case_id, "fps": round(fps, 2), "total_frames": total_frames,
+            "sampled_frames": len(frame_paths), "frame_paths": frame_paths, "frame_timestamps": timestamps}

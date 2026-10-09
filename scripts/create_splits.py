@@ -30,7 +30,7 @@ def create_splits(input_csv: Path, output_csv: Path, seed: int = 42) -> None:
         row["split"] = split_by_source[row[group_field]]
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     with output_csv.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=[*rows[0].keys(), "split"])
+        writer = csv.DictWriter(handle, fieldnames=list(dict.fromkeys([*rows[0].keys(), "split"])))
         writer.writeheader(); writer.writerows(rows)
     print(f"Wrote {len(rows)} videos across {len(source_ids)} source groups to {output_csv}")
     for split in ("train", "validation", "test"):

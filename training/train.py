@@ -56,7 +56,7 @@ def train(manifest: Path, checkpoint: Path, config: TrainingConfig):
         history.append(metrics); print(json.dumps(metrics)); scheduler.step(metrics["validation_loss"])
         if metrics["f1"] > best_f1:
             best_f1 = metrics["f1"]; stale = 0; checkpoint.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({"model_state": model.state_dict(), "config": config.__dict__, "validation_metrics": metrics}, checkpoint)
+            torch.save({"model_state": model.state_dict(), "config": config.__dict__, "validation_metrics": metrics, "training_manifest": str(manifest), "architecture": "efficientnet_b0"}, checkpoint)
         else: stale += 1
         if stale >= config.patience: break
     checkpoint.with_suffix(".history.json").write_text(json.dumps(history, indent=2))

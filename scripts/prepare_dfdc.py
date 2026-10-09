@@ -1,6 +1,7 @@
 """Build a video-level DFDC manifest from Kaggle metadata.json files."""
 import argparse
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -47,11 +48,11 @@ def read_metadata(metadata_path: Path) -> list[dict]:
 
 
 def assign_source_groups(rows: list[dict]) -> None:
-    originals = {row["filename"] for row in rows if row["label"] == "REAL"}
     for row in rows:
-        original = row["original"]
-        group_name = original if original and original in originals else (original or row["filename"])
-        row["source_group"] = group_name
+        original = row["original"] or row["filename"]
+        namespace = str(Path(row["metadata_path"]).parent.resolve())
+        row["source_group"] = hashlib.sha256(f"{namespace}/{original}".encode()).hexdigest()[:20]
+        row["video_id"] = hashlib.sha256(str(Path(row["video_path"]).resolve()).encode()).hexdigest()[:20]
 
 
 def build_manifest(raw_root: Path, output: Path, strict: bool = False) -> dict:
@@ -69,7 +70,7 @@ def build_manifest(raw_root: Path, output: Path, strict: bool = False) -> dict:
         raise FileNotFoundError(f"{len(missing)} videos listed in metadata are missing. First: {missing[0]}")
     present_rows = [row for row in rows if Path(row["video_path"]).is_file()]
     output.parent.mkdir(parents=True, exist_ok=True)
-    fields = ["video_path", "filename", "label", "numeric_label", "original", "source_group", "metadata_path"]
+    fields = ["video_path", "filename", "label", "numeric_label", "original", "source_group", "video_id", "metadata_path"]
     with output.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
