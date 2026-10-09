@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.utils.video_processor import save_video, extract_frames, find_video_path, FRAMES_DIR
+from backend.utils.video_processor import save_video, extract_frames, find_video_path, FRAMES_DIR, MAX_FILE_SIZE_MB, MAX_DURATION_SECONDS
 from backend.utils.face_detector import detect_faces
 from backend.utils.inference import InferenceEngine, MODEL_CHECKPOINT, MODEL_NAME
 from backend.utils.aggregation import aggregate_probabilities
@@ -49,6 +49,18 @@ async def load_detector():
             inference_engine = InferenceEngine(MODEL_CHECKPOINT)
         except RuntimeError as exc:
             model_error = str(exc)
+
+
+@app.get("/api/model/info")
+def model_info():
+    return {
+        "name": MODEL_NAME,
+        "model_loaded": inference_engine is not None,
+        "calibrated_probabilities": False,
+        "decision_policy": "heuristic_temporal_v1",
+        "max_file_size_mb": MAX_FILE_SIZE_MB,
+        "max_duration_seconds": MAX_DURATION_SECONDS,
+    }
 
 
 @app.post("/api/upload")
