@@ -1,0 +1,25 @@
+name: Reference checkpoint compatibility
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/reference-checkpoint-demo]
+    paths:
+      - 'backend/utils/reference_model.py'
+      - 'backend/utils/inference.py'
+      - 'scripts/verify_reference_checkpoint.py'
+      - '.github/workflows/reference-checkpoint.yml'
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU torch
+        run: pip install torch==2.9.0 torchvision==0.24.0 --index-url https://download.pytorch.org/whl/cpu
+      - name: Install runtime dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Verify actual research checkpoint architecture
+        run: python -m scripts.verify_reference_checkpoint

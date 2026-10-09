@@ -13,11 +13,12 @@ DEFAULT_CHECKPOINT = Path(__file__).resolve().parents[2] / "models" / "truthlens
 MODEL_CHECKPOINT = os.getenv("TRUTHLENS_CHECKPOINT", str(DEFAULT_CHECKPOINT))
 MODEL_NAME = "EfficientNet-B0 (checkpoint-trained video face classifier)"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-INFERENCE_BATCH_SIZE = max(1, int(os.getenv("TRUTHLENS_BATCH_SIZE", "8")))
+INFERENCE_BATCH_SIZE = max(1, int(os.getenv("TRUTHLENS_BATCH_SIZE", "1")))
+torch.set_num_threads(max(1, int(os.getenv("TRUTHLENS_TORCH_THREADS", "1"))))
 
 
 class InferenceEngine:
-    def __init__(self, checkpoint: str = MODEL_CHECKPOINT):
+    def __init__(self, checkpoint: str = MODEL_CHECKPOINT, *, reference: bool = False):
         if not os.path.exists(checkpoint):
             raise RuntimeError(f"Trained checkpoint not found at '{checkpoint}'.")
         try:
@@ -26,11 +27,15 @@ class InferenceEngine:
             raise RuntimeError("Insufficient GPU memory to load the model.") from exc
         except Exception as exc:
             raise RuntimeError(f"Could not load trained checkpoint '{checkpoint}'.") from exc
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-        ])
+        self.reference = reference
+        self.model_source = "Xicor9/efficientnet-b0-ffpp-c23" if reference else "truthlens_local_checkpoint"
+        self.model_name = ("EfficientNet-B0 FF++ C23 (Xicor9 research checkpoint)" if reference else MODEL_NAME)
+        # The third-party author's published preprocessing uses ToTensor only.
+        # Locally trained TruthLens checkpoints use ImageNet normalization.
+        steps = [transforms.Resize((224, 224)), transforms.ToTensor()]
+        if not reference:
+            steps.append(transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD))
+        self.transform = transforms.Compose(steps)
 
     def predict(self, face_crops: list[dict]) -> list[dict]:
         output = []
