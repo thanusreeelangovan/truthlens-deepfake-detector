@@ -10,7 +10,8 @@ dist/
 # Environment
 .env
 
-# Uploads
+# Uploads and local evaluation results
+reports/
 uploads/
 storage/
 model-cache/

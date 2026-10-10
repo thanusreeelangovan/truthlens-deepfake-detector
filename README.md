@@ -95,6 +95,13 @@ The model is ImageNet-pretrained EfficientNet-B0 with a two-class REAL/MANIPULAT
 
 The best checkpoint is saved at `models/truthlens_efficientnet_b0.pt`. Training and runtime share the same largest-face crop and margin implementation.
 
+## Test videos and reproducible live evaluation
+
+See [docs/test-videos.md](docs/test-videos.md) for verified dataset sources,
+a labelled DFDC REAL/FAKE pair generator, a live API evaluation command,
+and guidance on false positives, abstentions and raw-score ROC AUC.
+No accuracy statistics have been claimed without running labelled clips.
+
 ## Evaluation
 
 ```bash
