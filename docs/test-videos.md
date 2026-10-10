@@ -30,13 +30,13 @@ Render may sleep on its free tier and impose upload/processing limits.
 ## Generate a balanced DFDC test manifest
 
 1. Sign in to Kaggle and accept the competition's dataset terms.
-2. Download and extract \`train_sample_videos.zip\`. It should contain
-   MP4 files alongside \`metadata.json\`.
+2. Download and extract `train_sample_videos.zip`. It should contain
+   MP4 files alongside `metadata.json`.
 3. From the project root:
 
-\`\`\`bash
+```bash
 python -m scripts.build_eval_manifest --dfdc-root "path/to/train_sample_videos" --pairs 10 --seed 42 --output data/processed/eval/dfdc_pairs.csv
-\`\`\`
+```
 
 This selects up to ten **matched** source groups, one REAL original and
 one FAKE derived from it per group. Selection is reproducible. Videos
@@ -46,33 +46,33 @@ and licences remain with their provider, not in this GitHub repository.
 
 First inspect the manifest without sending files anywhere:
 
-\`\`\`bash
+```bash
 python -m scripts.evaluate_live_videos --manifest data/processed/eval/dfdc_pairs.csv --dry-run
-\`\`\`
+```
 
 If you have rights and consent to upload the listed videos:
 
-\`\`\`bash
+```bash
 python -m scripts.evaluate_live_videos \
   --manifest data/processed/eval/dfdc_pairs.csv \
   --api-url https://truthlens-api-cysu.onrender.com \
   --output reports/dfdc_reference_eval.json \
   --max-videos 20
-\`\`\`
+```
 
 The command uploads videos sequentially; each must meet the current
 100 MB and 120-second API limits. Use a small number of clips to avoid
 exhausting the free backend. Results are saved locally; **do not commit**
 the JSON if clip names or paths may reveal private information.
-Run against \`http://127.0.0.1:8000\` to avoid uploading to Render.
+Run against `http://127.0.0.1:8000` to avoid uploading to Render.
 
 You can also make a CSV by hand with two columns:
 
-\`\`\`csv
+```csv
 video_path,label
 C:/Videos/authentic_01.mp4,REAL
 C:/Videos/authorized_deepfake_01.mp4,FAKE
-\`\`\`
+```
 
 ### How to interpret the report
 
